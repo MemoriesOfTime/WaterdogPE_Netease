@@ -132,12 +132,22 @@ public class HandshakeUtils {
         //UUID uuid = UUID.nameUUIDFromBytes(("pocket-auth-1-xuid:" + xuid).getBytes(StandardCharsets.UTF_8));
         UUID uuid = identityData.identity;
 
-        // 自己解析extraData中的uid字段
-        long uid = 0;
+        // 将extraData中网易相关字段全部提出来，合并到转发登录包的extraData中
+        JsonObject neteaseExtraData = new JsonObject();
         try {
             var rawIdentityClaims = result.rawIdentityClaims();
-            Map<?, ?> extraData = JsonUtils.childAsType(rawIdentityClaims, "extraData", Map.class);
-            uid = JsonUtils.childAsType(extraData, "uid", Long.class);
+            Map<String, Object> extraData = JsonUtils.childAsType(rawIdentityClaims, "extraData", Map.class);
+            neteaseExtraData = pickKeysToJson(
+                    extraData,
+                    "uid",
+                    "netease_sid",
+                    "platform",
+                    "os_name",
+                    "env",
+                    "engineVersion",
+                    "patchVersion",
+                    "bit"
+            );
         } catch (Exception ignored) {}
 
         SignedJWT clientDataJwt = SignedJWT.parse(packet.getClientJwt());
@@ -159,8 +169,8 @@ public class HandshakeUtils {
                 clientData.addProperty("Waterdog_Auth", true);
             }
         }
-        return new HandshakeEntry(identityPublicKey, clientData, xuid, uuid, uid, displayName, xboxAuth, protocol,
-                packet.getAuthPayload() instanceof CertificateChainPayload);
+        return new HandshakeEntry(identityPublicKey, clientData, xuid, uuid, displayName, xboxAuth, protocol,
+                packet.getAuthPayload() instanceof CertificateChainPayload, neteaseExtraData);
     }
 
     public static JsonObject parseClientData(JWSObject clientJwt, String xuid, BedrockSession session) throws Exception {
@@ -187,12 +197,35 @@ public class HandshakeUtils {
         });
     }
 
-    public static JsonObject createChainExtraData(String displayName, String xuid, UUID uuid, long uid) {
+    public static JsonObject createChainExtraData(String displayName, String xuid, UUID uuid, JsonObject neteaseExtraData) {
         JsonObject extraData = new JsonObject();
         extraData.addProperty("displayName", displayName);
         extraData.addProperty("XUID", xuid);
         extraData.addProperty("identity", uuid.toString());
-        extraData.addProperty("uid", uid);
+        for (String key : neteaseExtraData.keySet()) {
+            extraData.add(key, neteaseExtraData.get(key));
+        }
         return extraData;
+    }
+
+    public static JsonObject pickKeysToJson(Map<String, Object> map, String... keys) {
+        JsonObject json = new JsonObject();
+        if (map == null || keys == null) return json;
+        for (String key : keys) {
+            if (!map.containsKey(key)) continue;
+            Object val = map.get(key);
+            if (val == null) {
+                json.add(key, JsonNull.INSTANCE);
+            } else if (val instanceof Number) {
+                json.addProperty(key, (Number) val);
+            } else if (val instanceof String) {
+                json.addProperty(key, (String) val);
+            } else if (val instanceof Boolean) {
+                json.addProperty(key, (Boolean) val);
+            } else {
+                json.addProperty(key, val.toString());
+            }
+        }
+        return json;
     }
 }
