@@ -5,11 +5,19 @@ import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.utils.config.proxy.ProxyConfig;
 
+import java.util.Arrays;
+import java.util.List;
+
 /**
  * Netease协议处理工具类
  */
 @Log4j2
 public class NetEaseUtils {
+
+    private final static List<Integer> SUPPORTED_PROTOCOL_VERSIONS = Arrays.asList(
+            ProtocolVersion.MINECRAFT_PE_1_21_2.getProtocol(),
+            ProtocolVersion.MINECRAFT_PE_1_21_50.getProtocol()
+    );
     
     /**
      * 检查给定的协议版本和数据是否表示Netease客户端
@@ -21,8 +29,8 @@ public class NetEaseUtils {
             return false;
         }
 
-        // 识别条件：raknetProtocol == 8 且 protocol == 1.21.2的版本
-        if (raknetProtocol == 8 && protocolVersion == ProtocolVersion.MINECRAFT_PE_1_21_2.getProtocol()) {
+        // 识别条件：raknetProtocol == 8 且 protocol 是网易支持的版本
+        if (raknetProtocol == 8 && SUPPORTED_PROTOCOL_VERSIONS.contains(protocolVersion)) {
             return true;
         }
         
