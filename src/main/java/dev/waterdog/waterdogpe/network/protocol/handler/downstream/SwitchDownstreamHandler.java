@@ -98,6 +98,18 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
     }
 
     @Override
+    public PacketSignal handle(BiomeDefinitionListPacket packet) {
+        // NetEase client v686 (1.21.2) triggers BiomeComponentStorage assertion failure
+        // when receiving BiomeDefinitionListPacket after biome storage has been finalized
+        // from the injected empty chunks during transfer.
+        if (this.player.isNetEaseClient()
+                && this.player.getProtocol() == ProtocolVersion.MINECRAFT_PE_1_21_2) {
+            return Signals.CANCEL;
+        }
+        return PacketSignal.UNHANDLED;
+    }
+
+    @Override
     public final PacketSignal handle(StartGamePacket packet) {
         RewriteData rewriteData = this.player.getRewriteData();
         rewriteData.setOriginalEntityId(packet.getRuntimeEntityId());
