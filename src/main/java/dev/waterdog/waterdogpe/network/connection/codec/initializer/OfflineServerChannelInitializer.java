@@ -19,8 +19,10 @@ import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.network.connection.codec.query.QueryHandler;
 import dev.waterdog.waterdogpe.network.connection.codec.server.RakNetPingHandler;
 import dev.waterdog.waterdogpe.network.connection.codec.server.ServerDatagramHandler;
+import dev.waterdog.waterdogpe.network.connection.codec.server.WdpeRakServerOfflineHandler;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
+import org.cloudburstmc.netty.channel.raknet.RakServerChannel;
 import org.cloudburstmc.netty.handler.codec.raknet.common.UnconnectedPongEncoder;
 import org.cloudburstmc.netty.handler.codec.raknet.server.RakServerOfflineHandler;
 
@@ -33,6 +35,7 @@ public class OfflineServerChannelInitializer extends ChannelInitializer<Channel>
 
     @Override
     protected void initChannel(Channel channel) throws Exception {
+        channel.pipeline().replace(RakServerOfflineHandler.NAME, RakServerOfflineHandler.NAME, new WdpeRakServerOfflineHandler((RakServerChannel) channel));
         channel.pipeline()
                 .addFirst(ServerDatagramHandler.NAME, new ServerDatagramHandler(this.proxy.getSecurityManager()))
                 .addAfter(RakServerOfflineHandler.NAME, RakNetPingHandler.NAME, new RakNetPingHandler(this.proxy));
