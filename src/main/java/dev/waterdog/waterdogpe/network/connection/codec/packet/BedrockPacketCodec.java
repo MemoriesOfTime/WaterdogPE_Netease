@@ -31,6 +31,7 @@ import org.cloudburstmc.protocol.bedrock.netty.BedrockPacketWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.UnknownPacket;
 
+import java.util.Iterator;
 import java.util.List;
 
 import static java.util.Objects.requireNonNull;
@@ -73,8 +74,16 @@ public abstract class BedrockPacketCodec extends MessageToMessageCodec<BedrockBa
 
     @Override
     protected void decode(ChannelHandlerContext ctx, BedrockBatchWrapper msg, List<Object> out) throws Exception {
-        for (BedrockPacketWrapper packet : msg.getPackets()) {
+        Iterator<BedrockPacketWrapper> iterator = msg.getPackets().iterator();
+        while (iterator.hasNext()) {
+            BedrockPacketWrapper packet = iterator.next();
             this.decode(ctx, packet);
+            if (this.alwaysDecode && packet.getPacket() == null) {
+                log.debug("Removing undecoded packet from batch (packetId={})", packet.getPacketId());
+                iterator.remove();
+                packet.release();
+                msg.modify();
+            }
         }
         out.add(msg.retain());
     }
@@ -111,7 +120,11 @@ public abstract class BedrockPacketCodec extends MessageToMessageCodec<BedrockBa
             this.decodeHeader(msg, wrapper);
             wrapper.setHeaderLength(msg.readerIndex() - index);
             if (this.alwaysDecode) { // Otherwise, we are decoding at other place
-                wrapper.setPacket(this.codec.tryDecode(helper, msg, wrapper.getPacketId(), this.inboundRecipient));
+                try {
+                    wrapper.setPacket(this.codec.tryDecode(helper, msg, wrapper.getPacketId(), this.inboundRecipient));
+                } catch (IllegalArgumentException e) {
+                    log.warn("Skipping packet with wrong direction (packetId={}): {}", wrapper.getPacketId(), e.getMessage());
+                }
             }
         } catch (Throwable t) {
             log.error("Failed to decode packet", t);

@@ -211,6 +211,7 @@ public class ProxiedBedrockPeer extends BedrockPeer {
     }
 
     public void disconnect(String reason) {
+        log.info("Disconnecting {} with reason: {}", this.getSocketAddress(), reason, new Throwable("Disconnect trace"));
         this.sessions.values().forEach(session -> session.disconnect(reason));
         this.channel.eventLoop().schedule(() -> this.channel.close(), 200, TimeUnit.MILLISECONDS);
     }
