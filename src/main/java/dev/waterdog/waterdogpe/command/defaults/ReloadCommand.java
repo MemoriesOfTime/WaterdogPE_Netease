@@ -5,6 +5,7 @@ import dev.waterdog.waterdogpe.command.Command;
 import dev.waterdog.waterdogpe.command.CommandSender;
 import dev.waterdog.waterdogpe.command.CommandSettings;
 import dev.waterdog.waterdogpe.utils.ConfigurationManager;
+import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
 import net.cubespace.Yamler.Config.InvalidConfigurationException;
 
 public class ReloadCommand extends Command {
@@ -24,17 +25,20 @@ public class ReloadCommand extends Command {
 
         try {
             ConfigurationManager.ReloadResult result = configManager.reloadServerInfos(proxy.getServerInfoMap());
-            sender.sendMessage("§aServer list reloaded! §3Added: §b" + result.getAdded()
-                    + "§3, Removed: §b" + result.getRemoved()
-                    + "§3, Updated: §b" + result.getUpdated());
+            sender.sendMessage(new TranslationContainer("waterdog.command.reload.success",
+                    String.valueOf(result.getAdded()),
+                    String.valueOf(result.getRemoved()),
+                    String.valueOf(result.getUpdated())));
             if (!result.getPendingUpdates().isEmpty()) {
-                sender.sendMessage("§ePending updates (will apply after players leave): §b" + String.join(", ", result.getPendingUpdates()));
+                sender.sendMessage(new TranslationContainer("waterdog.command.reload.pending.updates",
+                        String.join(", ", result.getPendingUpdates())));
             }
             if (!result.getPendingRemovals().isEmpty()) {
-                sender.sendMessage("§ePending removals (will apply after players leave): §b" + String.join(", ", result.getPendingRemovals()));
+                sender.sendMessage(new TranslationContainer("waterdog.command.reload.pending.removals",
+                        String.join(", ", result.getPendingRemovals())));
             }
         } catch (InvalidConfigurationException e) {
-            sender.sendMessage("§cFailed to reload config: " + e.getMessage());
+            sender.sendMessage(new TranslationContainer("waterdog.command.reload.failed", e.getMessage()));
             proxy.getLogger().error("Failed to reload server list from config", e);
         }
         return true;
