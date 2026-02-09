@@ -50,6 +50,11 @@ public class RoundRobinReconnectHandler implements IReconnectHandler {
         return null;
     }
 
+    @Override
+    public void onReload() {
+        this.iterator = null;
+    }
+
     private static class RoundRobinIterator<E> implements Iterator<E> {
         private final Collection<E> collection;
         private Iterator<E> iterator;
