@@ -174,7 +174,7 @@
         <dependency>
             <groupId>org.allaymc</groupId>
             <artifactId>protocol-extension</artifactId>
-            <version>0.1.4</version>
+            <version>0.1.5</version>
         </dependency>
         <dependency>
             <groupId>org.cloudburstmc.netty</groupId>
@@ -308,6 +308,7 @@
                     <failOnNoGitDirectory>false</failOnNoGitDirectory>
                     <failOnUnableToExtractRepoInfo>false</failOnUnableToExtractRepoInfo>
                     <runOnlyOnce>true</runOnlyOnce>
+                    <useNativeGit>true</useNativeGit>
                     <excludeProperties>
                         <excludeProperty>git.user.*</excludeProperty>
                     </excludeProperties>
