@@ -103,9 +103,12 @@ public class InitialHandler extends AbstractDownstreamHandler {
     public final PacketSignal handle(StartGamePacket packet) {
         RewriteData rewriteData = this.player.getRewriteData();
         rewriteData.setOriginalEntityId(packet.getRuntimeEntityId());
-        // rewriteData.setEntityId(ThreadLocalRandom.current().nextInt(10000, 15000));
-        // 直接使用原始玩家id，playerId统一使用网易uid，在nk服中处理
-        rewriteData.setEntityId(packet.getRuntimeEntityId());
+        if (this.player.isNetEaseClient()) {
+            // 网易客户端直接使用 RuntimeEntityId，保持 playerId = uid
+            rewriteData.setEntityId(packet.getRuntimeEntityId());
+        } else {
+            rewriteData.setEntityId(ThreadLocalRandom.current().nextInt(10000, 15000));
+        }
         rewriteData.setGameRules(packet.getGamerules());
         rewriteData.setDimension(packet.getDimensionId());
         rewriteData.setSpawnPosition(packet.getPlayerPosition());

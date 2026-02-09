@@ -18,6 +18,9 @@ package dev.waterdog.waterdogpe.network.protocol;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import lombok.ToString;
+import org.allaymc.protocol.extension.codec.v630.Bedrock_v630_NetEase;
+import org.allaymc.protocol.extension.codec.v686.Bedrock_v686_NetEase;
+import org.allaymc.protocol.extension.codec.v766.Bedrock_v766_NetEase;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
 import org.cloudburstmc.protocol.bedrock.codec.v313.Bedrock_v313;
 import org.cloudburstmc.protocol.bedrock.codec.v332.Bedrock_v332;
@@ -75,6 +78,7 @@ import org.cloudburstmc.protocol.bedrock.codec.v844.Bedrock_v844;
 import org.cloudburstmc.protocol.bedrock.codec.v859.Bedrock_v859;
 import org.cloudburstmc.protocol.bedrock.codec.v860.Bedrock_v860;
 import org.cloudburstmc.protocol.bedrock.codec.v898.Bedrock_v898;
+import org.cloudburstmc.protocol.bedrock.codec.v924.Bedrock_v924;
 
 @ToString(exclude = {"defaultCodec", "bedrockCodec"})
 public enum ProtocolVersion {
@@ -116,17 +120,17 @@ public enum ProtocolVersion {
     MINECRAFT_PE_1_20_10(594, Bedrock_v594.CODEC),
     MINECRAFT_PE_1_20_30(618, Bedrock_v618.CODEC),
     MINECRAFT_PE_1_20_40(622, Bedrock_v622.CODEC),
-    MINECRAFT_PE_1_20_50(630, Bedrock_v630.CODEC),
+    MINECRAFT_PE_1_20_50(630, Bedrock_v630.CODEC, Bedrock_v630_NetEase.CODEC),
     MINECRAFT_PE_1_20_60(649, Bedrock_v649.CODEC),
     MINECRAFT_PE_1_20_70(662, Bedrock_v662.CODEC),
     MINECRAFT_PE_1_20_80(671, Bedrock_v671.CODEC),
     MINECRAFT_PE_1_21_0(685, Bedrock_v685.CODEC),
-    MINECRAFT_PE_1_21_2(686, Bedrock_v686.CODEC),
+    MINECRAFT_PE_1_21_2(686, Bedrock_v686.CODEC, Bedrock_v686_NetEase.CODEC),
     MINECRAFT_PE_1_21_20(712, Bedrock_v712.CODEC),
     MINECRAFT_PE_1_21_30(729, Bedrock_v729.CODEC),
     MINECRAFT_PE_1_21_40(748, Bedrock_v748.CODEC),
     MINECRAFT_PE_1_21_50_29(765, 766, Bedrock_v766.CODEC),
-    MINECRAFT_PE_1_21_50(766, Bedrock_v766.CODEC),
+    MINECRAFT_PE_1_21_50(766, Bedrock_v766.CODEC, Bedrock_v766_NetEase.CODEC),
     MINECRAFT_PE_1_21_60(776, Bedrock_v776.CODEC),
     MINECRAFT_PE_1_21_70(786, Bedrock_v786.CODEC),
     MINECRAFT_PE_1_21_80(800, Bedrock_v800.CODEC),
@@ -138,10 +142,12 @@ public enum ProtocolVersion {
     MINECRAFT_PE_1_21_120(859, Bedrock_v859.CODEC),
     MINECRAFT_PE_1_21_124(860, Bedrock_v860.CODEC),
     MINECRAFT_PE_1_21_130(898, Bedrock_v898.CODEC),
+    MINECRAFT_PE_1_26_0(924, Bedrock_v924.CODEC),
     ;
 
     private static final ProtocolVersion[] VALUES = values();
     private static final Int2ObjectMap<ProtocolVersion> VERSIONS = new Int2ObjectOpenHashMap<>();
+
     static {
         for (ProtocolVersion version : values()) {
             VERSIONS.putIfAbsent(version.getProtocol(), version);
@@ -152,16 +158,27 @@ public enum ProtocolVersion {
     private final int protocolInternal;
 
     private final BedrockCodec defaultCodec;
+    private final BedrockCodec defaultNetEaseCodec; // Null if not exists
     private BedrockCodec bedrockCodec;
+    private BedrockCodec netEaseCodec;  // Null if not exists
 
     ProtocolVersion(int protocol, BedrockCodec codec) {
         this(protocol, protocol, codec);
     }
 
+    ProtocolVersion(int protocol, BedrockCodec codec, BedrockCodec netEaseCodec) {
+        this(protocol, protocol, codec, netEaseCodec);
+    }
+
     ProtocolVersion(int protocol, int protocolInternal, BedrockCodec codec) {
+        this(protocol, protocolInternal, codec, null);
+    }
+
+    ProtocolVersion(int protocol, int protocolInternal, BedrockCodec codec, BedrockCodec netEaseCodec) {
         this.protocol = protocol;
         this.protocolInternal = protocolInternal;
         this.defaultCodec = codec;
+        this.defaultNetEaseCodec = netEaseCodec;
     }
 
     public boolean isBefore(ProtocolVersion version) {
@@ -192,16 +209,32 @@ public enum ProtocolVersion {
         return this.getCodec().getRaknetProtocolVersion();
     }
 
+    public int getNetEaseRaknetVersion() {
+        return this.getNetEaseCodec().getRaknetProtocolVersion();
+    }
+
     public BedrockCodec getDefaultCodec() {
         return this.defaultCodec;
+    }
+
+    public BedrockCodec getDefaultNetEaseCodec() {
+        return this.defaultNetEaseCodec;
     }
 
     public BedrockCodec getCodec() {
         return this.bedrockCodec == null ? this.defaultCodec : this.bedrockCodec;
     }
 
+    public BedrockCodec getNetEaseCodec() {
+        return this.netEaseCodec == null ? this.defaultNetEaseCodec : this.netEaseCodec;
+    }
+
     public void setBedrockCodec(BedrockCodec bedrockCodec) {
         this.bedrockCodec = bedrockCodec;
+    }
+
+    public void setNetEaseCodec(BedrockCodec netEaseCodec) {
+        this.netEaseCodec = netEaseCodec;
     }
 
     public String getMinecraftVersion() {

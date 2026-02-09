@@ -20,12 +20,12 @@ import dev.waterdog.waterdogpe.network.EventLoops;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.codec.client.ClientPingHandler;
 import dev.waterdog.waterdogpe.network.connection.codec.initializer.ProxiedClientSessionInitializer;
-import dev.waterdog.waterdogpe.network.netease.NetEaseUtils;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import dev.waterdog.waterdogpe.utils.config.proxy.NetworkSettings;
 import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.*;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.EventLoop;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.Promise;
 import org.cloudburstmc.netty.channel.raknet.RakChannelFactory;
@@ -36,9 +36,7 @@ import org.cloudburstmc.protocol.bedrock.BedrockPong;
 import java.net.InetSocketAddress;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
-import lombok.extern.log4j.Log4j2;
 
-@Log4j2
 public class BedrockServerInfo extends ServerInfo {
 
     public BedrockServerInfo(String serverName, InetSocketAddress address, InetSocketAddress publicAddress) {
@@ -55,21 +53,13 @@ public class BedrockServerInfo extends ServerInfo {
         ProtocolVersion version = player.getProtocol();
         NetworkSettings networkSettings = player.getProxy().getNetworkSettings();
 
-        int rakVersion = version.getRaknetVersion();
-        // NetEase：使用实际连接客户端的RakNet版本来连接服务器
-        int clientRakVersion = player.getConnection().getPeer().getRakVersion();
-        boolean isNetEaseClient = NetEaseUtils.isNetEaseClient(clientRakVersion, version.getProtocol());
-        if (isNetEaseClient) {
-            rakVersion = clientRakVersion;
-        }
-        
         // Just pick EventLoop here, and we can use it for our promise too
         EventLoop eventLoop = player.getProxy().getWorkerEventLoopGroup().next();
         Promise<ClientConnection> promise = eventLoop.newPromise();
         new Bootstrap()
                 .channelFactory(RakChannelFactory.client(EventLoops.getChannelType().getDatagramChannel()))
                 .group(eventLoop)
-                .option(RakChannelOption.RAK_PROTOCOL_VERSION, rakVersion)
+                .option(RakChannelOption.RAK_PROTOCOL_VERSION, player.isNetEaseClient() ? version.getNetEaseRaknetVersion() : version.getRaknetVersion())
                 .option(RakChannelOption.RAK_ORDERING_CHANNELS, 1)
                 .option(RakChannelOption.RAK_CONNECT_TIMEOUT, networkSettings.getConnectTimeout() * 1000L)
                 .option(RakChannelOption.RAK_SESSION_TIMEOUT, 10000L)

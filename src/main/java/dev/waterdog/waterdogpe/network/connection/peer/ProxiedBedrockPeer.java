@@ -26,6 +26,8 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.ReferenceCountUtil;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.log4j.Log4j2;
 import org.cloudburstmc.netty.channel.raknet.RakChannel;
 import org.cloudburstmc.netty.channel.raknet.config.RakChannelOption;
@@ -56,6 +58,9 @@ public class ProxiedBedrockPeer extends BedrockPeer {
     private BedrockServerSession firstSession;
     private CompressionStrategy compressionStrategy;
     private ProtocolVersion version = ProtocolVersion.oldest();
+    @Getter
+    @Setter
+    private boolean netEaseClient = false;
 
     public ProxiedBedrockPeer(Channel channel, BedrockSessionFactory factory) {
         super(channel, factory);
@@ -131,8 +136,7 @@ public class ProxiedBedrockPeer extends BedrockPeer {
     private void sendPacket0(BedrockBatchWrapper wrapper) {
         if (!(wrapper.getAlgorithm() instanceof PacketCompressionAlgorithm)) {
             wrapper.setCompressed(null); // Do not allow using unsupported algorithms when sending to client
-        } else if (this.version.isBefore(ProtocolVersion.MINECRAFT_PE_1_20_60) && (this.compressionStrategy == null || 
-                !Objects.equals(wrapper.getAlgorithm(), this.compressionStrategy.getDefaultCompression().getAlgorithm()))) {
+        } else if (this.version.isBefore(ProtocolVersion.MINECRAFT_PE_1_20_60) && (this.compressionStrategy == null || !Objects.equals(wrapper.getAlgorithm(), this.compressionStrategy.getDefaultCompression().getAlgorithm()))) {
             wrapper.setCompressed(null); // Before 1.20.60 dynamic compression is not supported
         }
 
@@ -171,7 +175,8 @@ public class ProxiedBedrockPeer extends BedrockPeer {
     public void setProtocol(ProtocolVersion protocol) {
         Objects.requireNonNull(protocol, "protocol");
         this.version = protocol;
-        this.getChannel().pipeline().get(BedrockPacketCodec.class).setCodecHelper(protocol.getCodec(), protocol.getCodec().createHelper());
+        var codec = this.netEaseClient ? protocol.getNetEaseCodec() : protocol.getCodec();
+        this.getChannel().pipeline().get(BedrockPacketCodec.class).setCodecHelper(codec, codec.createHelper());
     }
 
     @Override
@@ -230,6 +235,7 @@ public class ProxiedBedrockPeer extends BedrockPeer {
     }
 
     public void disconnect(String reason) {
+        log.info("Disconnecting {} with reason: {}", this.getSocketAddress(), reason, new Throwable("Disconnect trace"));
         this.sessions.values().forEach(session -> session.disconnect(reason));
         this.channel.eventLoop().schedule(() -> this.channel.close(), 200, TimeUnit.MILLISECONDS);
     }

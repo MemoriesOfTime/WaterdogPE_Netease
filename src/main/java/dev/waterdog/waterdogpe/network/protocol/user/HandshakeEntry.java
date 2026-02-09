@@ -36,12 +36,13 @@ public class HandshakeEntry {
     private final UUID uuid;
     private final String displayName;
     private final boolean xboxAuthed;
+    private final boolean isChainPayload;
+    private final boolean netEaseClient;
+    private final LoginData.NetEaseData netEaseData;
     @Setter
     private ProtocolVersion protocol;
-    private final boolean isChainPayload;
-    private final JsonObject neteaseExtraData;
 
-    public HandshakeEntry(ECPublicKey identityPublicKey, JsonObject clientData, String xuid, UUID uuid, String displayName, boolean xboxAuthed, ProtocolVersion protocol, boolean isChainPayload, JsonObject neteaseExtraData) {
+    public HandshakeEntry(ECPublicKey identityPublicKey, JsonObject clientData, String xuid, UUID uuid, String displayName, boolean xboxAuthed, ProtocolVersion protocol, boolean isChainPayload, boolean netEaseClient, LoginData.NetEaseData netEaseData) {
         this.identityPublicKey = identityPublicKey;
         this.clientData = clientData;
         this.xuid = xuid;
@@ -50,9 +51,13 @@ public class HandshakeEntry {
         this.xboxAuthed = xboxAuthed;
         this.protocol = protocol;
         this.isChainPayload = isChainPayload;
-        this.neteaseExtraData = neteaseExtraData;
+        this.netEaseClient = netEaseClient;
+        this.netEaseData = netEaseData;
     }
 
+    public boolean isNetEaseClient() {
+        return this.netEaseClient;
+    }
 
     public LoginData buildData(BedrockServerSession session, ProxyServer proxy) throws Exception {
         // This is first event which exposes new player connecting to proxy.
@@ -64,7 +69,6 @@ public class HandshakeEntry {
         builder.displayName(this.displayName);
         builder.uuid(this.uuid);
         builder.xuid(this.xuid);
-        builder.neteaseExtraData(this.neteaseExtraData);
         builder.xboxAuthed(this.xboxAuthed);
         builder.protocol(this.protocol);
         builder.joinHostname(this.clientData.get("ServerAddress").getAsString().split(":")[0]);
@@ -72,6 +76,8 @@ public class HandshakeEntry {
         builder.keyPair(event.getKeyPair());
         builder.clientData(this.clientData);
         builder.isChainPayload(this.isChainPayload);
+        builder.netEaseClient(this.netEaseClient);
+        builder.netEaseData(this.netEaseData);
         if (this.clientData.has("DeviceModel")) {
             builder.deviceModel(this.clientData.get("DeviceModel").getAsString());
         }

@@ -21,6 +21,7 @@ import java.net.InetSocketAddress;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 /**
@@ -54,6 +55,10 @@ public class ServerInfoMap {
 
     public Collection<ServerInfo> values() {
         return Collections.unmodifiableCollection(this.serverList.values());
+    }
+
+    public Set<String> keySet() {
+        return Collections.unmodifiableSet(this.serverList.keySet());
     }
 
     /**

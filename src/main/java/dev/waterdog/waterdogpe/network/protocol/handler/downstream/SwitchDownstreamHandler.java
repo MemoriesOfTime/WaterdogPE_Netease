@@ -98,6 +98,15 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
     }
 
     @Override
+    public PacketSignal handle(BiomeDefinitionListPacket packet) {
+        // 尝试解决网易客户端卡顿问题
+        if (this.player.isNetEaseClient()) {
+            return Signals.CANCEL;
+        }
+        return PacketSignal.UNHANDLED;
+    }
+
+    @Override
     public final PacketSignal handle(StartGamePacket packet) {
         RewriteData rewriteData = this.player.getRewriteData();
         rewriteData.setOriginalEntityId(packet.getRuntimeEntityId());
