@@ -231,17 +231,6 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
     }
 
     @Override
-    public PacketSignal handle(BiomeDefinitionListPacket packet) {
-        boolean isNetease = this.player.isNeteaseClient;
-        if (isNetease) {
-            // 只在服务器切换时取消BiomeDefinitionListPacket(ID: 122)的发送到客户端
-            this.player.getLogger().debug("[Netease] Blocking BiomeDefinitionListPacket (ID: 122) from being sent to client during server switch");
-            return Signals.CANCEL;
-        }
-        return super.handle(packet);
-    }
-
-    @Override
     public PacketSignal handle(DisconnectPacket packet) {
         TransferCallback transferCallback = this.player.getRewriteData().getTransferCallback();
         if (transferCallback != null) {

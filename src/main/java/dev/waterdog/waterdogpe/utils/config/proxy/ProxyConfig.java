@@ -129,10 +129,6 @@ public class ProxyConfig extends YamlConfig {
     @Comment("Replaces username spaces with underscores if enabled")
     private boolean replaceUsernameSpaces = false;
 
-    @Path("netease_client")
-    @Comment("启用Netease版本支持，允许Netease客户端连接")
-    private boolean netEaseClient = false;
-
     @Path("enable_query")
     @Accessors(fluent = true)
     @Comment("Whether server query should be enabled")
@@ -227,12 +223,5 @@ public class ProxyConfig extends YamlConfig {
 
     public int getIdleThreads() {
         return this.defaultIdleThreads < 1 ? Runtime.getRuntime().availableProcessors() : this.defaultIdleThreads;
-    }
-
-    /**
-     * 获取Netease模式设置
-     */
-    public boolean netEaseClient() {
-        return this.netEaseClient;
     }
 }

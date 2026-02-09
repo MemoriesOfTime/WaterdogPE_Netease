@@ -104,9 +104,8 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
             }
         } catch (Exception e) {
             // 全局错误保护 - 防止任何异常导致连接断开
-            // netease：在子服务器是nukkit-mot时，玩家登录会出现一次commands=[]的AvailableCommandsPacket，导致报错；这里就不显示该报错
             String errorMessage = e.getMessage();
-            if (errorMessage != null && !errorMessage.contains("commands=[]")) {
+            if (errorMessage != null) {
                 log.error("批处理包处理发生严重错误: {}", e.getMessage());
             }
             if (log.isDebugEnabled()) {

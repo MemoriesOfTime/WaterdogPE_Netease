@@ -20,10 +20,8 @@ import org.cloudburstmc.protocol.bedrock.data.ResourcePackType;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.event.defaults.ResourcePacksRebuildEvent;
-import dev.waterdog.waterdogpe.network.netease.NetEaseUtils;
 import dev.waterdog.waterdogpe.packs.types.ResourcePack;
 import dev.waterdog.waterdogpe.packs.types.ZipResourcePack;
-import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import dev.waterdog.waterdogpe.utils.FileUtils;
 import org.cloudburstmc.protocol.common.util.Preconditions;
 
@@ -183,7 +181,7 @@ public class PackManager {
         this.proxy.getEventManager().callEvent(event);
     }
 
-    public ResourcePackDataInfoPacket packInfoFromIdVer(String idVersion, ProxiedPlayer player) {
+    public ResourcePackDataInfoPacket packInfoFromIdVer(String idVersion) {
         ResourcePack resourcePack = this.packsByIdVer.get(idVersion);
         if (resourcePack == null) {
             return null;
@@ -199,13 +197,7 @@ public class PackManager {
         if (resourcePack.getType().equals(ResourcePack.TYPE_RESOURCES)) {
             packet.setType(ResourcePackType.RESOURCES);
         } else if (resourcePack.getType().equals(ResourcePack.TYPE_DATA)) {
-            var protocol = player.getProtocol().getProtocol();
-            var raknetVersion = player.getConnection().getPeer().getRakVersion();
-            if (NetEaseUtils.isNetEaseClient(raknetVersion, protocol)) {
-                packet.setType(ResourcePackType.DATA_ADD_ON);
-            } else {
-                packet.setType(ResourcePackType.ADDON);
-            }
+            packet.setType(ResourcePackType.ADDON);
         }
         return packet;
     }
