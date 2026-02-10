@@ -33,5 +33,6 @@ public class DefaultCommandMap extends SimpleCommandMap {
         this.registerCommand(new SendCommand());
         this.registerCommand(new EndCommand());
         this.registerCommand(new ReloadCommand());
+        this.registerCommand(new StatusCommand());
     }
 }
