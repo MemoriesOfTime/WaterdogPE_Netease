@@ -98,6 +98,9 @@ public class PackManager {
             return null;
         }
 
+        // Detect NetEase mod behavior pack by checking for pack_manifest.json
+        pack.setSupportType(this.detectPackSupportType(pack));
+
         File contentKeyFile = new File(packPath.getParent().toFile(), packPath.toFile().getName() + ".key");
         pack.setContentKey(contentKeyFile.exists() ? Files.readString(contentKeyFile.toPath(), StandardCharsets.UTF_8).replace("\n", "") : "");
 
@@ -105,6 +108,24 @@ public class PackManager {
             pack.saveToCache();
         }
         return pack;
+    }
+
+    /**
+     * Detect the support type of a resource pack.
+     * NetEase mod behavior packs typically use pack_manifest.json instead of manifest.json.
+     */
+    private ResourcePack.SupportType detectPackSupportType(ResourcePack pack) {
+        try {
+            // Check if pack_manifest.json exists (NetEase specific)
+            Path packManifestPath = Paths.get("pack_manifest.json");
+            if (pack.getStream(packManifestPath) != null) {
+                this.proxy.getLogger().info("Detected NetEase mod pack: " + pack.getPackPath().getFileName());
+                return ResourcePack.SupportType.NETEASE;
+            }
+        } catch (IOException e) {
+            // Ignore, will default to UNIVERSAL
+        }
+        return ResourcePack.SupportType.UNIVERSAL;
     }
 
     /**
@@ -161,9 +182,27 @@ public class PackManager {
 
         this.stackPacket.setGameVersion("");
 
+        boolean hasAddonPacks = false;
         for (ResourcePack pack : this.packs.values()) {
-            ResourcePacksInfoPacket.Entry infoEntry = new ResourcePacksInfoPacket.Entry(pack.getPackId(), pack.getVersion().toString(),
-                    pack.getPackSize(), pack.getContentKey(), "", pack.getContentKey().equals("") ? "" : pack.getPackId().toString(), false, false, false, null);
+            boolean isAddonPack = pack.getType().equals(ResourcePack.TYPE_DATA);
+            if (isAddonPack) {
+                hasAddonPacks = true;
+            }
+            // NetEase mod behavior packs use scripting (Python scripts)
+            boolean usesScripting = isAddonPack && pack.getSupportType() == ResourcePack.SupportType.NETEASE;
+            
+            ResourcePacksInfoPacket.Entry infoEntry = new ResourcePacksInfoPacket.Entry(
+                    pack.getPackId(), 
+                    pack.getVersion().toString(),
+                    pack.getPackSize(), 
+                    pack.getContentKey(), 
+                    "", // subPackName
+                    pack.getContentKey().equals("") ? "" : pack.getPackId().toString(), // contentId
+                    usesScripting, // scripting - true for NetEase mod behavior packs
+                    false, // raytracingCapable
+                    isAddonPack, // addonPack
+                    null // cdnUrl
+            );
             ResourcePackStackPacket.Entry stackEntry = new ResourcePackStackPacket.Entry(pack.getPackId().toString(), pack.getVersion().toString(), "");
             if (pack.getType().equals(ResourcePack.TYPE_RESOURCES)) {
                 this.packsInfoPacket.getResourcePackInfos().add(infoEntry);
@@ -174,9 +213,27 @@ public class PackManager {
             }
         }
 
+        // Set hasAddonPacks flag (since v662 1.20.70)
+        this.packsInfoPacket.setHasAddonPacks(hasAddonPacks);
+
         if (this.proxy.getConfiguration().enableEducationFeatures()) {
             this.stackPacket.getBehaviorPacks().add(EDU_PACK);
         }
+        
+        // Debug logging
+        this.proxy.getLogger().info("=== Resource Pack Info ===");
+        this.proxy.getLogger().info("Has addon packs: " + hasAddonPacks);
+        this.proxy.getLogger().info("Resource packs: " + this.packsInfoPacket.getResourcePackInfos().size());
+        this.proxy.getLogger().info("Behavior packs: " + this.packsInfoPacket.getBehaviorPackInfos().size());
+        for (ResourcePacksInfoPacket.Entry entry : this.packsInfoPacket.getResourcePackInfos()) {
+            this.proxy.getLogger().info("  Resource: " + entry.getPackId() + " v" + entry.getPackVersion() + 
+                " scripting=" + entry.isScripting() + " addonPack=" + entry.isAddonPack());
+        }
+        for (ResourcePacksInfoPacket.Entry entry : this.packsInfoPacket.getBehaviorPackInfos()) {
+            this.proxy.getLogger().info("  Behavior: " + entry.getPackId() + " v" + entry.getPackVersion() + 
+                " scripting=" + entry.isScripting() + " addonPack=" + entry.isAddonPack());
+        }
+        
         ResourcePacksRebuildEvent event = new ResourcePacksRebuildEvent(this.packsInfoPacket, this.stackPacket);
         this.proxy.getEventManager().callEvent(event);
     }

@@ -162,6 +162,10 @@ public class ProxiedPlayer implements CommandSender {
     private void sendResourcePacks() {
         ResourcePacksInfoPacket packet = this.proxy.getPackManager().getPacksInfoPacket();
         PlayerResourcePackInfoSendEvent event = new PlayerResourcePackInfoSendEvent(this, packet);
+        
+        // Filter packs based on client type (NetEase vs Microsoft)
+        dev.waterdog.waterdogpe.packs.NetEasePackFilter.filterPacksForClient(event);
+        
         this.proxy.getEventManager().callEvent(event);
         if (event.isCancelled()) {
             // Connect player to downstream without sending ResourcePacksInfoPacket
