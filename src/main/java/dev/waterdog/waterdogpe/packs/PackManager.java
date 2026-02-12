@@ -188,8 +188,6 @@ public class PackManager {
             if (isAddonPack) {
                 hasAddonPacks = true;
             }
-            // NetEase mod behavior packs use scripting (Python scripts)
-            boolean usesScripting = isAddonPack && pack.getSupportType() == ResourcePack.SupportType.NETEASE;
             
             ResourcePacksInfoPacket.Entry infoEntry = new ResourcePacksInfoPacket.Entry(
                     pack.getPackId(), 
@@ -198,7 +196,7 @@ public class PackManager {
                     pack.getContentKey(), 
                     "", // subPackName
                     pack.getContentKey().equals("") ? "" : pack.getPackId().toString(), // contentId
-                    usesScripting, // scripting - true for NetEase mod behavior packs
+                    false, // scripting
                     false, // raytracingCapable
                     isAddonPack, // addonPack
                     null // cdnUrl
