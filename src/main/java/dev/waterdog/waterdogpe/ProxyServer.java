@@ -146,9 +146,7 @@ public class ProxyServer {
         // Set maximum decompressed bytes for packet decompression
         System.setProperty("bedrock.maxDecompressedBytes", String.valueOf(this.getConfiguration().getMaxDecompressedBytes()));
 
-        if (this.getConfiguration().isDebug()) {
-            WaterdogPE.version().debug(true);
-        }
+        WaterdogPE.version().debug(this.getConfiguration().isDebug());
 
         CompressionType compression = this.getConfiguration().getCompression();
         if (compression.getBedrockAlgorithm() == null) {
