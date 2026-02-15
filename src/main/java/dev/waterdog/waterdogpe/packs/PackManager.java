@@ -287,4 +287,37 @@ public class PackManager {
     public Map<String, ResourcePack> getPacksByIdVer() {
         return this.packsByIdVer;
     }
+
+    /**
+     * Returns a deep copy of the packs info packet.
+     * Use this instead of getPacksInfoPacket() when the packet will be modified (e.g., by NetEasePackFilter).
+     */
+    public ResourcePacksInfoPacket copyPacksInfoPacket() {
+        ResourcePacksInfoPacket copy = new ResourcePacksInfoPacket();
+        copy.setForcedToAccept(this.packsInfoPacket.isForcedToAccept());
+        copy.setHasAddonPacks(this.packsInfoPacket.isHasAddonPacks());
+        copy.setScriptingEnabled(this.packsInfoPacket.isScriptingEnabled());
+        copy.setForcingServerPacksEnabled(this.packsInfoPacket.isForcingServerPacksEnabled());
+        copy.setWorldTemplateId(this.packsInfoPacket.getWorldTemplateId());
+        copy.setWorldTemplateVersion(this.packsInfoPacket.getWorldTemplateVersion());
+        copy.getResourcePackInfos().addAll(this.packsInfoPacket.getResourcePackInfos());
+        copy.getBehaviorPackInfos().addAll(this.packsInfoPacket.getBehaviorPackInfos());
+        return copy;
+    }
+
+    /**
+     * Returns a deep copy of the stack packet.
+     * Use this instead of getStackPacket() when the packet will be modified (e.g., by NetEasePackFilter).
+     */
+    public ResourcePackStackPacket copyStackPacket() {
+        ResourcePackStackPacket copy = new ResourcePackStackPacket();
+        copy.setForcedToAccept(this.stackPacket.isForcedToAccept());
+        copy.setGameVersion(this.stackPacket.getGameVersion());
+        copy.setExperimentsPreviouslyToggled(this.stackPacket.isExperimentsPreviouslyToggled());
+        copy.setHasEditorPacks(this.stackPacket.isHasEditorPacks());
+        copy.getResourcePacks().addAll(this.stackPacket.getResourcePacks());
+        copy.getBehaviorPacks().addAll(this.stackPacket.getBehaviorPacks());
+        copy.getExperiments().addAll(this.stackPacket.getExperiments());
+        return copy;
+    }
 }

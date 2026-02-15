@@ -44,14 +44,10 @@ public class NetEasePackFilter {
         boolean isNetEaseClient = player.getLoginData().isNetEaseClient();
         int protocol = player.getProtocol().getProtocol();
         
-        player.getProxy().getLogger().info("=== Filtering packs for " + player.getName() + " ===");
-        player.getProxy().getLogger().info("NetEase client: " + isNetEaseClient + ", Protocol: " + protocol);
-        
         ResourcePacksInfoPacket packet = event.getPacket();
         
         // For 1.21.30+, merge behavior packs into resource packs
         if (protocol >= PROTOCOL_1_21_30) {
-            player.getProxy().getLogger().info("Protocol >= 1.21.30, merging behavior packs into resource packs");
             // Filter and merge behavior packs into resource packs
             List<ResourcePacksInfoPacket.Entry> filteredBehaviorPacks = filterInfoEntries(
                 packet.getBehaviorPackInfos(), 
@@ -66,9 +62,6 @@ public class NetEasePackFilter {
                 player.getProxy().getPackManager()
             );
             
-            player.getProxy().getLogger().info("Filtered: " + filteredResourcePacks.size() + " resource packs, " + 
-                filteredBehaviorPacks.size() + " behavior packs");
-            
             // Merge: resource packs first, then behavior packs
             List<ResourcePacksInfoPacket.Entry> merged = new ArrayList<>();
             merged.addAll(filteredResourcePacks);
@@ -80,9 +73,14 @@ public class NetEasePackFilter {
             // Clear behavior packs for 1.21.30+
             packet.getBehaviorPackInfos().clear();
             
-            player.getProxy().getLogger().info("After merge: " + packet.getResourcePackInfos().size() + " total packs");
+            // Set hasAddonPacks if any behavior packs are present
+            if (!filteredBehaviorPacks.isEmpty()) {
+                packet.setHasAddonPacks(true);
+            }
+            
+            player.getProxy().getLogger().debug("[NetEasePackFilter] {} (netease={}, proto={}): {} resource + {} behavior packs merged",
+                player.getName(), isNetEaseClient, protocol, filteredResourcePacks.size(), filteredBehaviorPacks.size());
         } else {
-            player.getProxy().getLogger().info("Protocol < 1.21.30, keeping packs separate");
             // For older versions, filter separately
             List<ResourcePacksInfoPacket.Entry> filteredResourcePacks = filterInfoEntries(
                 packet.getResourcePackInfos(), 
@@ -100,8 +98,8 @@ public class NetEasePackFilter {
             packet.getBehaviorPackInfos().clear();
             packet.getBehaviorPackInfos().addAll(filteredBehaviorPacks);
             
-            player.getProxy().getLogger().info("Filtered: " + filteredResourcePacks.size() + " resource packs, " + 
-                filteredBehaviorPacks.size() + " behavior packs");
+            player.getProxy().getLogger().debug("[NetEasePackFilter] {} (netease={}, proto={}): {} resource, {} behavior packs",
+                player.getName(), isNetEaseClient, protocol, filteredResourcePacks.size(), filteredBehaviorPacks.size());
         }
     }
 

@@ -160,7 +160,7 @@ public class ProxiedPlayer implements CommandSender {
     }
 
     private void sendResourcePacks() {
-        ResourcePacksInfoPacket packet = this.proxy.getPackManager().getPacksInfoPacket();
+        ResourcePacksInfoPacket packet = this.proxy.getPackManager().copyPacksInfoPacket();
         PlayerResourcePackInfoSendEvent event = new PlayerResourcePackInfoSendEvent(this, packet);
         
         // Filter packs based on client type (NetEase vs Microsoft)

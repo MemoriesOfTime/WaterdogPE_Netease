@@ -56,7 +56,7 @@ public class ResourcePacksHandler extends AbstractUpstreamHandler {
                 this.sendNextPacket();
                 break;
             case HAVE_ALL_PACKS:
-                PlayerResourcePackApplyEvent event = new PlayerResourcePackApplyEvent(this.player, packManager.getStackPacket());
+                PlayerResourcePackApplyEvent event = new PlayerResourcePackApplyEvent(this.player, packManager.copyStackPacket());
                 
                 // Filter stack based on client type and protocol version
                 dev.waterdog.waterdogpe.packs.NetEasePackFilter.filterStackForClient(event);
