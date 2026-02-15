@@ -34,6 +34,11 @@ import java.util.List;
 public class NetEasePackFilter {
 
     private static final int PROTOCOL_1_21_30 = 729;
+    /**
+     * From v898 (1.21.130), the ResourcePackStackPacket serializer removes the
+     * separate behavior packs array and only has a single resource packs list.
+     */
+    private static final int PROTOCOL_1_21_130 = 898;
 
     /**
      * Filter resource pack info entries based on client type and protocol version.
@@ -106,6 +111,12 @@ public class NetEasePackFilter {
     /**
      * Filter resource pack stack entries based on client type and protocol version.
      * Called from PlayerResourcePackApplyEvent listener.
+     * 
+     * NOTE: The stack packet merge threshold differs from the info packet!
+     * - Info packet: v729+ serializer only has resourcePackInfos → merge at 729
+     * - Stack packet: v898+ serializer only has resourcePacks → merge at 898
+     * For v729-v897 (e.g. v766), the stack serializer still writes behaviorPacks
+     * and resourcePacks as separate arrays, so we must NOT merge them.
      */
     public static void filterStackForClient(PlayerResourcePackApplyEvent event) {
         ProxiedPlayer player = event.getPlayer();
@@ -114,8 +125,8 @@ public class NetEasePackFilter {
         
         ResourcePackStackPacket packet = event.getStackPacket();
         
-        // For 1.21.30+, merge behavior packs into resource packs
-        if (protocol >= PROTOCOL_1_21_30) {
+        // For 1.21.130+ (v898), the stack serializer only has resourcePacks list
+        if (protocol >= PROTOCOL_1_21_130) {
             // Filter and merge behavior packs into resource packs
             List<ResourcePackStackPacket.Entry> filteredBehaviorPacks = filterStackEntries(
                 packet.getBehaviorPacks(), 
@@ -138,10 +149,11 @@ public class NetEasePackFilter {
             packet.getResourcePacks().clear();
             packet.getResourcePacks().addAll(merged);
             
-            // Clear behavior packs for 1.21.30+
+            // Clear behavior packs for 1.21.130+
             packet.getBehaviorPacks().clear();
         } else {
-            // For older versions, filter separately
+            // For older versions (including v766), filter both lists separately
+            // keeping behavior packs in their own list
             List<ResourcePackStackPacket.Entry> filteredResourcePacks = filterStackEntries(
                 packet.getResourcePacks(), 
                 isNetEaseClient,

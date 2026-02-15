@@ -172,8 +172,22 @@ public class ProxiedPlayer implements CommandSender {
             this.acceptResourcePacks = false;
             this.initialConnect();
         } else {
+            ResourcePacksInfoPacket finalPacket = event.getPacket();
+            // Debug: log exact packet contents
+            this.proxy.getLogger().info("[PackDebug] Sending ResourcePacksInfoPacket to {} (proto={}):", 
+                this.getName(), this.getProtocol().getProtocol());
+            this.proxy.getLogger().info("[PackDebug]   hasAddonPacks={}, resourcePackInfos={}, behaviorPackInfos={}",
+                finalPacket.isHasAddonPacks(), finalPacket.getResourcePackInfos().size(), finalPacket.getBehaviorPackInfos().size());
+            for (var entry : finalPacket.getResourcePackInfos()) {
+                this.proxy.getLogger().info("[PackDebug]   resource: id={} ver={} addonPack={}", 
+                    entry.getPackId(), entry.getPackVersion(), entry.isAddonPack());
+            }
+            for (var entry : finalPacket.getBehaviorPackInfos()) {
+                this.proxy.getLogger().info("[PackDebug]   behavior: id={} ver={} addonPack={}", 
+                    entry.getPackId(), entry.getPackVersion(), entry.isAddonPack());
+            }
             this.connection.setPacketHandler(new ResourcePacksHandler(this));
-            this.connection.sendPacket(event.getPacket());
+            this.connection.sendPacket(finalPacket);
         }
     }
 

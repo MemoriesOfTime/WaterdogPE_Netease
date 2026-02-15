@@ -170,7 +170,9 @@ public class PackManager {
 
     public void rebuildPackets() {
         this.packsInfoPacket.setForcedToAccept(this.proxy.getConfiguration().isForceServerPacks());
-        this.packsInfoPacket.setWorldTemplateId(UUID.randomUUID());
+        // Use all-zeros UUID (no world template), matching Nukkit-MOT's default behavior.
+        // A random UUID could be misinterpreted as referencing a world template pack.
+        this.packsInfoPacket.setWorldTemplateId(new UUID(0, 0));
         this.packsInfoPacket.setWorldTemplateVersion("");
         this.stackPacket.setForcedToAccept(this.proxy.getConfiguration().isOverwriteClientPacks());
 
@@ -219,46 +221,72 @@ public class PackManager {
         }
         
         // Debug logging
-        this.proxy.getLogger().info("=== Resource Pack Info ===");
-        this.proxy.getLogger().info("Has addon packs: " + hasAddonPacks);
-        this.proxy.getLogger().info("Resource packs: " + this.packsInfoPacket.getResourcePackInfos().size());
-        this.proxy.getLogger().info("Behavior packs: " + this.packsInfoPacket.getBehaviorPackInfos().size());
-        for (ResourcePacksInfoPacket.Entry entry : this.packsInfoPacket.getResourcePackInfos()) {
-            this.proxy.getLogger().info("  Resource: " + entry.getPackId() + " v" + entry.getPackVersion() + 
-                " scripting=" + entry.isScripting() + " addonPack=" + entry.isAddonPack());
-        }
-        for (ResourcePacksInfoPacket.Entry entry : this.packsInfoPacket.getBehaviorPackInfos()) {
-            this.proxy.getLogger().info("  Behavior: " + entry.getPackId() + " v" + entry.getPackVersion() + 
-                " scripting=" + entry.isScripting() + " addonPack=" + entry.isAddonPack());
-        }
+        this.proxy.getLogger().debug("[PackManager] Rebuilt packs: {} resource, {} behavior, hasAddonPacks={}",
+            this.packsInfoPacket.getResourcePackInfos().size(),
+            this.packsInfoPacket.getBehaviorPackInfos().size(),
+            hasAddonPacks);
         
         ResourcePacksRebuildEvent event = new ResourcePacksRebuildEvent(this.packsInfoPacket, this.stackPacket);
         this.proxy.getEventManager().callEvent(event);
     }
 
+    /**
+     * Look up a ResourcePack by either UUID_VERSION or UUID-only key.
+     * Tries packsByIdVer first (UUID_VERSION), then falls back to packs map (UUID).
+     * This is needed because NetEase clients receive UUID-only pack IDs (no version suffix)
+     * in ResourcePackDataInfoPacket, so they send UUID-only in subsequent requests.
+     */
+    private ResourcePack lookupPack(String key) {
+        ResourcePack pack = this.packsByIdVer.get(key);
+        if (pack != null) {
+            return pack;
+        }
+        // Fallback: try parsing as UUID for direct lookup
+        try {
+            pack = this.packs.get(UUID.fromString(key));
+        } catch (IllegalArgumentException ignored) {
+            // Not a valid UUID, try extracting UUID from "UUID_VERSION" format
+            int idx = key.indexOf('_');
+            if (idx > 0) {
+                try {
+                    pack = this.packs.get(UUID.fromString(key.substring(0, idx)));
+                } catch (IllegalArgumentException ignored2) {
+                }
+            }
+        }
+        return pack;
+    }
+
     public ResourcePackDataInfoPacket packInfoFromIdVer(String idVersion) {
-        ResourcePack resourcePack = this.packsByIdVer.get(idVersion);
+        ResourcePack resourcePack = this.lookupPack(idVersion);
         if (resourcePack == null) {
             return null;
         }
 
         ResourcePackDataInfoPacket packet = new ResourcePackDataInfoPacket();
         packet.setPackId(resourcePack.getPackId());
-        packet.setPackVersion(resourcePack.getVersion().toString());
+        // Don't set packVersion — the serializer will send just UUID without "_VERSION" suffix.
+        // This matches Nukkit-MOT's behavior and is required for NetEase clients which use
+        // the DataInfo pack ID as their cache key.
         packet.setMaxChunkSize(CHUNK_SIZE);
         packet.setChunkCount((resourcePack.getPackSize() - 1) / packet.getMaxChunkSize() + 1);
         packet.setCompressedPackSize(resourcePack.getPackSize());
         packet.setHash(resourcePack.getHash());
+        // IMPORTANT: The Protocol library's TypeMap has different ID assignments than the
+        // real Bedrock protocol. Real protocol: Resources=6, Behavior=4, Addon=1.
+        // Protocol library TypeMap: RESOURCES→1, ADDON→4, CACHED→6.
+        // To match Nukkit-MOT (which uses the real protocol IDs), we use CACHED(→6)
+        // for resource packs and ADDON(→4) for behavior packs.
         if (resourcePack.getType().equals(ResourcePack.TYPE_RESOURCES)) {
-            packet.setType(ResourcePackType.RESOURCES);
+            packet.setType(ResourcePackType.CACHED); // wire value 6 = real Resources
         } else if (resourcePack.getType().equals(ResourcePack.TYPE_DATA)) {
-            packet.setType(ResourcePackType.ADDON);
+            packet.setType(ResourcePackType.ADDON);  // wire value 4 = real Behavior
         }
         return packet;
     }
 
     public ResourcePackChunkDataPacket packChunkDataPacket(String idVersion, ResourcePackChunkRequestPacket from) {
-        ResourcePack resourcePack = this.packsByIdVer.get(idVersion);
+        ResourcePack resourcePack = this.lookupPack(idVersion);
         if (resourcePack == null) {
             return null;
         }

@@ -51,6 +51,21 @@ public class ResourcePacksHandler extends AbstractUpstreamHandler {
                         this.player.disconnect("disconnectionScreen.resourcePack");
                         break;
                     }
+                    // Debug: log DataInfo packet details
+                    StringBuilder hashHex = new StringBuilder();
+                    if (response.getHash() != null) {
+                        for (byte b : response.getHash()) {
+                            hashHex.append(String.format("%02x", b));
+                        }
+                    }
+                    this.player.getProxy().getLogger().info(
+                        "[PackDebug] DataInfo: packId={} packVer={} maxChunkSize={} chunkCount={} compressedSize={} hashLen={} hash={} premium={} type={}",
+                        response.getPackId(), response.getPackVersion(),
+                        response.getMaxChunkSize(), response.getChunkCount(),
+                        response.getCompressedPackSize(), 
+                        response.getHash() != null ? response.getHash().length : 0,
+                        hashHex.toString(),
+                        response.isPremium(), response.getType());
                     this.pendingPacks.offer(response);
                 }
                 this.sendNextPacket();
@@ -62,7 +77,19 @@ public class ResourcePacksHandler extends AbstractUpstreamHandler {
                 dev.waterdog.waterdogpe.packs.NetEasePackFilter.filterStackForClient(event);
                 
                 this.player.getProxy().getEventManager().callEvent(event);
-                this.player.getConnection().sendPacket(event.getStackPacket());
+                // Debug: log stack packet contents
+                ResourcePackStackPacket stackPkt = event.getStackPacket();
+                this.player.getProxy().getLogger().info("[PackDebug] Sending ResourcePackStackPacket to {} (proto={}):",
+                    this.player.getName(), this.player.getProtocol().getProtocol());
+                this.player.getProxy().getLogger().info("[PackDebug]   resourcePacks={}, behaviorPacks={}",
+                    stackPkt.getResourcePacks().size(), stackPkt.getBehaviorPacks().size());
+                for (var e2 : stackPkt.getResourcePacks()) {
+                    this.player.getProxy().getLogger().info("[PackDebug]   resource-stack: id={} ver={}", e2.getPackId(), e2.getPackVersion());
+                }
+                for (var e2 : stackPkt.getBehaviorPacks()) {
+                    this.player.getProxy().getLogger().info("[PackDebug]   behavior-stack: id={} ver={}", e2.getPackId(), e2.getPackVersion());
+                }
+                this.player.getConnection().sendPacket(stackPkt);
                 break;
             case COMPLETED:
                 if (!this.player.hasUpstreamBridge()) {
@@ -77,7 +104,11 @@ public class ResourcePacksHandler extends AbstractUpstreamHandler {
     @Override
     public PacketSignal handle(ResourcePackChunkRequestPacket packet) {
         PackManager packManager = this.player.getProxy().getPackManager();
-        ResourcePackChunkDataPacket response = packManager.packChunkDataPacket(packet.getPackId() + "_" + packet.getPackVersion(), packet);
+        String version = packet.getPackVersion();
+        String idVersion = (version != null && !version.isEmpty())
+            ? packet.getPackId() + "_" + version
+            : packet.getPackId().toString();
+        ResourcePackChunkDataPacket response = packManager.packChunkDataPacket(idVersion, packet);
         if (response == null) {
             this.player.disconnect("Unknown resource pack!");
         } else {
