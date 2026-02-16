@@ -34,7 +34,7 @@ public class OfflineServerChannelInitializer extends ChannelInitializer<Channel>
     }
 
     @Override
-    protected void initChannel(Channel channel) throws Exception {
+    protected void initChannel(Channel channel) {
         channel.pipeline().replace(RakServerOfflineHandler.NAME, RakServerOfflineHandler.NAME, new WdpeRakServerOfflineHandler((RakServerChannel) channel));
         channel.pipeline()
                 .addFirst(ServerDatagramHandler.NAME, new ServerDatagramHandler(this.proxy.getSecurityManager()))

@@ -17,6 +17,8 @@ package dev.waterdog.waterdogpe.network.protocol;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.ToString;
 import org.allaymc.protocol.extension.codec.v630.Bedrock_v630_NetEase;
 import org.allaymc.protocol.extension.codec.v686.Bedrock_v686_NetEase;
@@ -147,19 +149,24 @@ public enum ProtocolVersion {
 
     private static final ProtocolVersion[] VALUES = values();
     private static final Int2ObjectMap<ProtocolVersion> VERSIONS = new Int2ObjectOpenHashMap<>();
-
     static {
         for (ProtocolVersion version : values()) {
             VERSIONS.putIfAbsent(version.getProtocol(), version);
         }
     }
 
+    @Getter
     private final int protocol;
+    @Getter
     private final int protocolInternal;
 
+    @Getter
     private final BedrockCodec defaultCodec;
+    @Getter
     private final BedrockCodec defaultNetEaseCodec; // Null if not exists
+    @Setter
     private BedrockCodec bedrockCodec;
+    @Setter
     private BedrockCodec netEaseCodec;  // Null if not exists
 
     ProtocolVersion(int protocol, BedrockCodec codec) {
@@ -197,14 +204,6 @@ public enum ProtocolVersion {
         return this.protocolInternal >= version.protocolInternal;
     }
 
-    public int getProtocol() {
-        return this.protocol;
-    }
-
-    public int getProtocolInternal() {
-        return this.protocolInternal;
-    }
-
     public int getRaknetVersion() {
         return this.getCodec().getRaknetProtocolVersion();
     }
@@ -213,28 +212,12 @@ public enum ProtocolVersion {
         return this.getNetEaseCodec().getRaknetProtocolVersion();
     }
 
-    public BedrockCodec getDefaultCodec() {
-        return this.defaultCodec;
-    }
-
-    public BedrockCodec getDefaultNetEaseCodec() {
-        return this.defaultNetEaseCodec;
-    }
-
     public BedrockCodec getCodec() {
         return this.bedrockCodec == null ? this.defaultCodec : this.bedrockCodec;
     }
 
     public BedrockCodec getNetEaseCodec() {
         return this.netEaseCodec == null ? this.defaultNetEaseCodec : this.netEaseCodec;
-    }
-
-    public void setBedrockCodec(BedrockCodec bedrockCodec) {
-        this.bedrockCodec = bedrockCodec;
-    }
-
-    public void setNetEaseCodec(BedrockCodec netEaseCodec) {
-        this.netEaseCodec = netEaseCodec;
     }
 
     public String getMinecraftVersion() {

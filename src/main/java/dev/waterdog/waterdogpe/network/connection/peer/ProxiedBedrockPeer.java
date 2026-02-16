@@ -54,6 +54,7 @@ import java.util.concurrent.TimeUnit;
 @Log4j2
 public class ProxiedBedrockPeer extends BedrockPeer {
     private BedrockServerSession firstSession;
+    @Getter
     private CompressionStrategy compressionStrategy;
     private ProtocolVersion version = ProtocolVersion.oldest();
     @Getter
@@ -72,7 +73,7 @@ public class ProxiedBedrockPeer extends BedrockPeer {
                         BedrockServerSession session = this.getSession(wrapper.getTargetSubClientId());
                         session.onPacket(wrapper);
                     } catch (Exception e) {
-                        log.error("[{}] 分发数据包时发生异常，子客户端ID: {}", 
+                        log.error("[{}] 分发数据包时发生异常，子客户端ID: {}",
                             getSocketAddress(), wrapper.getTargetSubClientId(), e);
                     }
                 }
@@ -134,7 +135,8 @@ public class ProxiedBedrockPeer extends BedrockPeer {
     private void sendPacket0(BedrockBatchWrapper wrapper) {
         if (!(wrapper.getAlgorithm() instanceof PacketCompressionAlgorithm)) {
             wrapper.setCompressed(null); // Do not allow using unsupported algorithms when sending to client
-        } else if (this.version.isBefore(ProtocolVersion.MINECRAFT_PE_1_20_60) && (this.compressionStrategy == null || !Objects.equals(wrapper.getAlgorithm(), this.compressionStrategy.getDefaultCompression().getAlgorithm()))) {
+        } else if (this.version.isBefore(ProtocolVersion.MINECRAFT_PE_1_20_60) && (this.compressionStrategy == null || 
+                !Objects.equals(wrapper.getAlgorithm(), this.compressionStrategy.getDefaultCompression().getAlgorithm()))) {
             wrapper.setCompressed(null); // Before 1.20.60 dynamic compression is not supported
         }
 
@@ -222,17 +224,12 @@ public class ProxiedBedrockPeer extends BedrockPeer {
     }
 
     public void disconnect(String reason) {
-        log.info("Disconnecting {} with reason: {}", this.getSocketAddress(), reason, new Throwable("Disconnect trace"));
         this.sessions.values().forEach(session -> session.disconnect(reason));
         this.channel.eventLoop().schedule(() -> this.channel.close(), 200, TimeUnit.MILLISECONDS);
     }
 
     public int getRakVersion() {
         return this.channel.config().getOption(RakChannelOption.RAK_PROTOCOL_VERSION);
-    }
-
-    public CompressionStrategy getCompressionStrategy() {
-        return this.compressionStrategy;
     }
 
     public boolean isSplitScreen() {
@@ -247,7 +244,7 @@ public class ProxiedBedrockPeer extends BedrockPeer {
     }
 
     @Override
-    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+    public void channelRead(ChannelHandlerContext ctx, Object msg) {
         try {
             if (msg instanceof BedrockBatchWrapper) {
                 this.onBedrockBatch((BedrockBatchWrapper) msg);
@@ -263,7 +260,7 @@ public class ProxiedBedrockPeer extends BedrockPeer {
     }
 
     @Override
-    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("{} Exception caught in bedrock connection", ctx.channel().remoteAddress(), cause);
         this.disconnect("Internal error");
     }

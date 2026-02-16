@@ -28,6 +28,18 @@ import dev.waterdog.waterdogpe.network.protocol.handler.PluginPacketHandler;
 import dev.waterdog.waterdogpe.network.protocol.handler.downstream.CompressionInitHandler;
 import dev.waterdog.waterdogpe.network.protocol.handler.downstream.InitialHandler;
 import dev.waterdog.waterdogpe.network.protocol.handler.downstream.SwitchDownstreamHandler;
+import lombok.Getter;
+import lombok.Setter;
+import org.cloudburstmc.protocol.bedrock.data.ScoreInfo;
+import org.cloudburstmc.protocol.bedrock.data.command.CommandOriginData;
+import org.cloudburstmc.protocol.bedrock.data.command.CommandOriginType;
+import org.cloudburstmc.protocol.bedrock.packet.*;
+import dev.waterdog.waterdogpe.ProxyServer;
+import dev.waterdog.waterdogpe.command.CommandSender;
+import dev.waterdog.waterdogpe.event.defaults.*;
+import dev.waterdog.waterdogpe.logger.MainLogger;
+import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
+import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.network.protocol.handler.upstream.ConnectedUpstreamHandler;
 import dev.waterdog.waterdogpe.network.protocol.handler.upstream.ResourcePacksHandler;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.RewriteMaps;
@@ -60,41 +72,62 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ProxiedPlayer implements CommandSender {
     private final ProxyServer proxy;
 
+    @Getter
     private final BedrockServerSession connection;
+    @Getter
     private final CompressionType compression;
 
     private final AtomicBoolean disconnected = new AtomicBoolean(false);
     private final AtomicBoolean loginCalled = new AtomicBoolean(false);
     private final AtomicBoolean loginCompleted = new AtomicBoolean(false);
     private volatile CharSequence disconnectReason;
+
+    @Getter
     private final RewriteData rewriteData = new RewriteData();
+    @Getter
     private final LoginData loginData;
+    @Getter
     private final RewriteMaps rewriteMaps;
+    @Getter
     private final LongSet entities = LongSets.synchronize(new LongOpenHashSet());
+    @Getter
     private final LongSet bossbars = LongSets.synchronize(new LongOpenHashSet());
     private final ObjectSet<UUID> players = ObjectSets.synchronize(new ObjectOpenHashSet<>());
+    @Getter
     private final ObjectSet<String> scoreboards = ObjectSets.synchronize(new ObjectOpenHashSet<>());
+    @Getter
     private final Long2ObjectMap<ScoreInfo> scoreInfos = Long2ObjectMaps.synchronize(new Long2ObjectOpenHashMap<>());
+    @Getter
     private final Long2LongMap entityLinks = Long2LongMaps.synchronize(new Long2LongOpenHashMap());
+    @Getter
     private final LongSet chunkBlobs = LongSets.synchronize(new LongOpenHashSet());
     private final Object2ObjectMap<String, Permission> permissions = new Object2ObjectOpenHashMap<>();
     private final Collection<ServerInfo> pendingServers = ObjectCollections.synchronize(new ObjectArrayList<>());
     private ClientConnection clientConnection;
     private ClientConnection pendingConnection;
 
+
+    /**
+     *  Whether this player should have administrator status.
+     *  Players with administrator status are granted every permission, even if not specifically applied.
+     */
+    @Setter
+    @Getter
     private boolean admin = false;
     /**
      * Signalizes if connection bridges can do entity and block rewrite.
-     * Since first StarGamePacket was received we start with entity id and block rewrite.
+     * Since first StartGamePacket was received, we start with entity id and block rewrite.
      */
+    @Setter
     private volatile boolean canRewrite = false;
     private volatile boolean hasUpstreamBridge = false;
     /**
-     * Some downstream server software require strict packet sending policy (like PMMP4).
+     * Some downstream server software requires strict packet sending policy (like PMMP4).
      * To pass packet handler dedicated to SetLocalPlayerAsInitializedPacket only, proxy has to post-complete server transfer.
-     * Using this bool allows tells us if we except post-complete phase operation.
+     * Using this bool allows telling us if we except post-complete phase operation.
      * See ConnectedDownstreamHandler and SwitchDownstreamHandler for exact usage.
      */
+    @Setter
     private volatile boolean acceptPlayStatus = false;
     /**
      * Used to determine if proxy can send resource packs packets to player.
@@ -105,11 +138,13 @@ public class ProxiedPlayer implements CommandSender {
      * Used to determine if proxy can send ItemComponentPacket to player.
      * Client will crash if ItemComponentPacket is sent twice.
      */
+    @Setter
     private volatile boolean acceptItemComponentPacket = true;
     /**
      * Additional downstream and upstream handlers can be set by plugin.
      * Do not set directly BedrockPacketHandler to sessions!
      */
+    @Getter
     private final Collection<PluginPacketHandler> pluginPacketHandlers = new ObjectArrayList<>();
 
     public ProxiedPlayer(ProxyServer proxy, BedrockServerSession session, CompressionType compression, LoginData loginData) {
@@ -380,7 +415,7 @@ public class ProxiedPlayer implements CommandSender {
      *
      * @param oldServer server from which was player disconnected.
      * @param reason    disconnected reason.
-     * @param message   disconnected message.
+     * @param message    disconnected message.
      * @return if connection to downstream was successful.
      */
     public boolean sendToFallback(ServerInfo oldServer, ReconnectReason reason, String message) {
@@ -635,7 +670,7 @@ public class ProxiedPlayer implements CommandSender {
     /**
      * Sends a toast notification with a message to the player
      *
-     * @param title   the notification title
+     * @param title the notification title
      * @param content the message content
      */
     public void sendToastMessage(String title, String content) {
@@ -728,24 +763,6 @@ public class ProxiedPlayer implements CommandSender {
         return Collections.unmodifiableCollection(this.permissions.values());
     }
 
-    /**
-     * @return true if the player has administrator status, false if not
-     */
-    public boolean isAdmin() {
-        return this.admin;
-    }
-
-    /**
-     * Sets whether this player should have Administrator Status.
-     * Players with administrator status are granted every permissions, even if not specificly applied
-     *
-     * @param admin Whether the player is admin or not
-     */
-    public void setAdmin(boolean admin) {
-        this.admin = admin;
-    }
-
-
     @Override
     public boolean isPlayer() {
         return true;
@@ -805,20 +822,8 @@ public class ProxiedPlayer implements CommandSender {
         return this.pendingConnection == null ? null : this.pendingConnection.getServerInfo();
     }
 
-    public BedrockServerSession getConnection() {
-        return this.connection;
-    }
-
     public boolean isConnected() {
         return !this.disconnected.get() && this.connection != null && this.connection.isConnected();
-    }
-
-    public RewriteMaps getRewriteMaps() {
-        return this.rewriteMaps;
-    }
-
-    public LoginData getLoginData() {
-        return this.loginData;
     }
 
     @Override
@@ -858,14 +863,6 @@ public class ProxiedPlayer implements CommandSender {
         return this.loginData.getNetEaseData();
     }
 
-    public RewriteData getRewriteData() {
-        return this.rewriteData;
-    }
-
-    public void setCanRewrite(boolean canRewrite) {
-        this.canRewrite = canRewrite;
-    }
-
     public boolean canRewrite() {
         return this.canRewrite;
     }
@@ -874,36 +871,8 @@ public class ProxiedPlayer implements CommandSender {
         return this.hasUpstreamBridge;
     }
 
-    public LongSet getEntities() {
-        return this.entities;
-    }
-
-    public LongSet getBossbars() {
-        return this.bossbars;
-    }
-
     public Collection<UUID> getPlayers() {
         return this.players;
-    }
-
-    public ObjectSet<String> getScoreboards() {
-        return this.scoreboards;
-    }
-
-    public Long2ObjectMap<ScoreInfo> getScoreInfos() {
-        return this.scoreInfos;
-    }
-
-    public Long2LongMap getEntityLinks() {
-        return this.entityLinks;
-    }
-
-    public LongSet getChunkBlobs() {
-        return this.chunkBlobs;
-    }
-
-    public void setAcceptPlayStatus(boolean acceptPlayStatus) {
-        this.acceptPlayStatus = acceptPlayStatus;
     }
 
     public boolean acceptPlayStatus() {
@@ -918,18 +887,6 @@ public class ProxiedPlayer implements CommandSender {
         return acceptItemComponentPacket;
     }
 
-    public void setAcceptItemComponentPacket(boolean acceptItemComponentPacket) {
-        this.acceptItemComponentPacket = acceptItemComponentPacket;
-    }
-
-    public CompressionType getCompression() {
-        return this.compression;
-    }
-
-    public Collection<PluginPacketHandler> getPluginPacketHandlers() {
-        return this.pluginPacketHandlers;
-    }
-
     public String getDisconnectReason() {
         return this.getDisconnectReason(String.class);
     }
@@ -941,10 +898,10 @@ public class ProxiedPlayer implements CommandSender {
     @Override
     public String toString() {
         return "ProxiedPlayer(displayName=" + this.getName() +
-               ", protocol=" + this.getProtocol() +
-               ", connected=" + this.isConnected() +
-               ", address=" + this.getAddress() +
-               ", serverInfo=" + this.getServerInfo() +
-               ")";
+                ", protocol=" + this.getProtocol() +
+                ", connected=" + this.isConnected() +
+                ", address=" + this.getAddress() +
+                ", serverInfo=" + this.getServerInfo() +
+                ")";
     }
 }
