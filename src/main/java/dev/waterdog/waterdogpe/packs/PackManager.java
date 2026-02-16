@@ -35,7 +35,7 @@ import java.util.UUID;
 
 public class PackManager {
 
-    private static final long CHUNK_SIZE = 102400;
+    private static final long CHUNK_SIZE = 8192;
 
     private static final PathMatcher ZIP_PACK_MATCHER = FileSystems.getDefault().getPathMatcher("glob:**.{zip,mcpack}");
     private static final ResourcePackStackPacket.Entry EDU_PACK = new ResourcePackStackPacket.Entry("0fba4063-dba1-4281-9b89-ff9390653530", "1.0.0", "");
@@ -199,7 +199,7 @@ public class PackManager {
                     "", // subPackName
                     pack.getContentKey().equals("") ? "" : pack.getPackId().toString(), // contentId
                     false, // scripting
-                    false, // raytracingCapable
+                    true,  // raytracingCapable
                     isAddonPack, // addonPack
                     null // cdnUrl
             );

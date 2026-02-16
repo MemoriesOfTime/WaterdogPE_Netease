@@ -79,10 +79,15 @@ public class ResourcePacksHandler extends AbstractUpstreamHandler {
                 this.player.getProxy().getEventManager().callEvent(event);
                 // Debug: log stack packet contents
                 ResourcePackStackPacket stackPkt = event.getStackPacket();
+                // Set gameVersion to match the player's protocol version (e.g., "1.21.50")
+                // MOT uses Utils.getVersionByProtocol(protocol) which returns the version string.
+                // WaterdogPE's ProtocolVersion enum name is like MINECRAFT_PE_1_21_50, and
+                // the client sends its version in the login e.g. "1.21.50".
+                stackPkt.setGameVersion(this.player.getProtocol().getDefaultCodec().getMinecraftVersion());
                 this.player.getProxy().getLogger().info("[PackDebug] Sending ResourcePackStackPacket to {} (proto={}):",
                     this.player.getName(), this.player.getProtocol().getProtocol());
-                this.player.getProxy().getLogger().info("[PackDebug]   resourcePacks={}, behaviorPacks={}",
-                    stackPkt.getResourcePacks().size(), stackPkt.getBehaviorPacks().size());
+                this.player.getProxy().getLogger().info("[PackDebug]   resourcePacks={}, behaviorPacks={}, gameVersion={}",
+                    stackPkt.getResourcePacks().size(), stackPkt.getBehaviorPacks().size(), stackPkt.getGameVersion());
                 for (var e2 : stackPkt.getResourcePacks()) {
                     this.player.getProxy().getLogger().info("[PackDebug]   resource-stack: id={} ver={}", e2.getPackId(), e2.getPackVersion());
                 }
