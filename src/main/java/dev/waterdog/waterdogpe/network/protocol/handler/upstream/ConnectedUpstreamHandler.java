@@ -43,6 +43,9 @@ public class ConnectedUpstreamHandler extends AbstractUpstreamHandler implements
     @Setter
     private ClientConnection targetConnection;
 
+    private ServerIdMapping cachedMapping;
+    private ReverseItemRewriter cachedRewriter;
+
     public ConnectedUpstreamHandler(ProxiedPlayer player) {
         super(player);
     }
@@ -108,8 +111,12 @@ public class ConnectedUpstreamHandler extends AbstractUpstreamHandler implements
         // Reverse item ID translation: unified IDs → server IDs
         ServerIdMapping mapping = this.player.getRewriteData().getCurrentMapping();
         if (mapping != null && !mapping.isIdentity()) {
-            ReverseItemRewriter rewriter = new ReverseItemRewriter(mapping);
-            signal = mergeSignals(signal, rewriter.doRewrite(packet));
+            // Cache the rewriter, only recreate when the mapping object changes
+            if (this.cachedMapping != mapping) {
+                this.cachedMapping = mapping;
+                this.cachedRewriter = new ReverseItemRewriter(mapping);
+            }
+            signal = mergeSignals(signal, this.cachedRewriter.doRewrite(packet));
         }
 
         return signal;

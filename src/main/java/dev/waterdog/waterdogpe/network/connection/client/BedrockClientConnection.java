@@ -103,11 +103,7 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
                 log.warn("Received unhandled packets for {}", this.getSocketAddress());
             }
         } catch (Exception e) {
-            // 全局错误保护 - 防止任何异常导致连接断开
-            String errorMessage = e.getMessage();
-            if (errorMessage != null) {
-                log.error("批处理包处理发生严重错误: {}", e.getMessage());
-            }
+            log.error("批处理包处理发生严重错误: {} - {}", e.getClass().getSimpleName(), e.getMessage());
             if (log.isDebugEnabled()) {
                 log.debug("批处理包错误详细信息:", e);
             }
