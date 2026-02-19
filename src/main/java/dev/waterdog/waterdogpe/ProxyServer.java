@@ -255,6 +255,8 @@ public class ProxyServer {
 
         if (this.getConfiguration().enableRegistryAggregation()) {
             this.definitionAggregator = new DefinitionAggregator();
+            this.definitionAggregator.initFromCache(
+                    new dev.waterdog.waterdogpe.network.protocol.registry.DefinitionCache(this.dataPath));
             this.logger.info("Registry aggregation enabled. Custom definitions from downstream servers will be unified.");
         }
 

@@ -28,6 +28,7 @@ import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
 import org.cloudburstmc.protocol.common.SimpleDefinitionRegistry;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -43,7 +44,9 @@ public class DefinitionAggregator {
      * Snapshot of definitions from a single downstream server.
      */
     public static class ServerSnapshot {
+        @lombok.Getter
         private final List<ItemDefinition> itemDefinitions;
+        @lombok.Getter
         private final List<BlockPropertyData> blockProperties;
         private NbtMap entityIdentifiers;
 
@@ -76,6 +79,28 @@ public class DefinitionAggregator {
 
     /** Temporary storage for players who need to reconnect to refresh definitions, keyed by player UUID */
     private final Map<UUID, PendingRefreshTarget> pendingRefreshTargets = new ConcurrentHashMap<>();
+
+    /** Optional cache for persisting definitions across proxy restarts */
+    private DefinitionCache cache;
+
+    /**
+     * Initialize the aggregator from a cached definition file.
+     * Should be called once at proxy startup before any player connects.
+     *
+     * @param cache the DefinitionCache to use for loading and saving
+     */
+    public void initFromCache(DefinitionCache cache) {
+        this.cache = cache;
+        Map<String, DefinitionCache.LoadedSnapshot> cached = cache.load();
+        for (Map.Entry<String, DefinitionCache.LoadedSnapshot> entry : cached.entrySet()) {
+            DefinitionCache.LoadedSnapshot snapshot = entry.getValue();
+            this.registerServer(entry.getKey(), snapshot.items(), snapshot.blockProperties());
+        }
+        if (!cached.isEmpty()) {
+            log.info("Pre-populated aggregator from cache: {} servers, {} unified items, {} unified block properties",
+                    cached.size(), this.unifiedItems.size(), this.unifiedBlockProperties.size());
+        }
+    }
 
     /**
      * Register a server's item and block definitions.
@@ -111,6 +136,12 @@ public class DefinitionAggregator {
             }
         }
 
+        // Clean up definitions that are no longer used by any server
+        boolean removedDefinitions = false;
+        if (previous != null) {
+            removedDefinitions = cleanupRemovedDefinitions(previous, snapshot);
+        }
+
         // Mark new definitions if this is a newly discovered server
         if (previous == null && this.serverSnapshots.size() > 1) {
             this.hasNewDefinitions = true;
@@ -118,7 +149,7 @@ public class DefinitionAggregator {
             discoveredNewBlocks = true;
         }
 
-        // Increment versions independently
+        // Increment versions independently (only for NEW definitions, not removals)
         if (discoveredNewItems) {
             this.itemDefinitionVersion++;
         }
@@ -128,6 +159,76 @@ public class DefinitionAggregator {
 
         log.info("Registered definitions from server {}: {} items, {} block properties",
                 serverName, snapshot.itemDefinitions.size(), snapshot.blockProperties.size());
+
+        // Persist to cache asynchronously when definitions changed
+        if ((discoveredNewItems || discoveredNewBlocks || removedDefinitions) && this.cache != null) {
+            Map<String, ServerSnapshot> snapshotsCopy = new LinkedHashMap<>(this.serverSnapshots);
+            CompletableFuture.runAsync(() -> this.cache.save(snapshotsCopy));
+        }
+    }
+
+    /**
+     * Remove definitions from the unified maps that were in the old snapshot
+     * but not in the new one, and are not present in any other server's snapshot.
+     *
+     * @return true if any definitions were removed
+     */
+    private boolean cleanupRemovedDefinitions(ServerSnapshot oldSnapshot, ServerSnapshot newSnapshot) {
+        boolean removed = false;
+
+        // Collect new snapshot's identifiers for quick lookup
+        Set<String> newItemIds = new HashSet<>(newSnapshot.itemDefinitions.size());
+        for (ItemDefinition def : newSnapshot.itemDefinitions) {
+            newItemIds.add(def.getIdentifier());
+        }
+
+        // Check each old item: if missing from new snapshot and no other server has it, remove
+        for (ItemDefinition oldDef : oldSnapshot.itemDefinitions) {
+            String id = oldDef.getIdentifier();
+            if (!newItemIds.contains(id) && !isDefinitionUsedByAnyServer(id, true)) {
+                this.unifiedItems.remove(id);
+                removed = true;
+            }
+        }
+
+        // Same for block properties
+        Set<String> newBlockNames = new HashSet<>(newSnapshot.blockProperties.size());
+        for (BlockPropertyData bp : newSnapshot.blockProperties) {
+            newBlockNames.add(bp.getName());
+        }
+
+        for (BlockPropertyData oldBp : oldSnapshot.blockProperties) {
+            String name = oldBp.getName();
+            if (!newBlockNames.contains(name) && !isDefinitionUsedByAnyServer(name, false)) {
+                this.unifiedBlockProperties.remove(name);
+                removed = true;
+            }
+        }
+
+        return removed;
+    }
+
+    /**
+     * Check if a definition identifier is present in any current server snapshot.
+     * Called after the current server's snapshot has already been replaced.
+     */
+    private boolean isDefinitionUsedByAnyServer(String identifier, boolean isItem) {
+        for (ServerSnapshot snap : this.serverSnapshots.values()) {
+            if (isItem) {
+                for (ItemDefinition def : snap.itemDefinitions) {
+                    if (def.getIdentifier().equals(identifier)) {
+                        return true;
+                    }
+                }
+            } else {
+                for (BlockPropertyData bp : snap.blockProperties) {
+                    if (bp.getName().equals(identifier)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /**
