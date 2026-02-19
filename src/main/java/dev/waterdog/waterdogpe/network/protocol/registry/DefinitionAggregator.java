@@ -16,10 +16,8 @@
 package dev.waterdog.waterdogpe.network.protocol.registry;
 
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
-import it.unimi.dsi.fastutil.ints.Int2IntMap;
-import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.ints.*;
+import lombok.Getter;
 import lombok.extern.log4j.Log4j2;
 import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.nbt.NbtType;
@@ -44,10 +42,11 @@ public class DefinitionAggregator {
      * Snapshot of definitions from a single downstream server.
      */
     public static class ServerSnapshot {
-        @lombok.Getter
+        @Getter
         private final List<ItemDefinition> itemDefinitions;
-        @lombok.Getter
+        @Getter
         private final List<BlockPropertyData> blockProperties;
+        @Getter
         private NbtMap entityIdentifiers;
 
         public ServerSnapshot(List<ItemDefinition> itemDefinitions, List<BlockPropertyData> blockProperties) {
@@ -68,9 +67,6 @@ public class DefinitionAggregator {
     /** Unified entity identifiers: entity id string -> NbtMap entry */
     private final Map<String, NbtMap> unifiedEntityEntries = new LinkedHashMap<>();
 
-    /** Track whether new definitions were added since last check */
-    private volatile boolean hasNewDefinitions = false;
-
     /** Monotonically increasing version for item definitions, incremented when new items are discovered */
     private volatile int itemDefinitionVersion = 0;
 
@@ -90,15 +86,20 @@ public class DefinitionAggregator {
      * @param cache the DefinitionCache to use for loading and saving
      */
     public void initFromCache(DefinitionCache cache) {
-        this.cache = cache;
+        // Load cached data first without setting this.cache,
+        // so registerServer/registerEntityIdentifiers won't trigger redundant cache writes during initialization
         Map<String, DefinitionCache.LoadedSnapshot> cached = cache.load();
         for (Map.Entry<String, DefinitionCache.LoadedSnapshot> entry : cached.entrySet()) {
             DefinitionCache.LoadedSnapshot snapshot = entry.getValue();
             this.registerServer(entry.getKey(), snapshot.items(), snapshot.blockProperties());
+            if (snapshot.entityIdentifiers() != null) {
+                this.registerEntityIdentifiers(entry.getKey(), snapshot.entityIdentifiers());
+            }
         }
+        this.cache = cache;
         if (!cached.isEmpty()) {
-            log.info("Pre-populated aggregator from cache: {} servers, {} unified items, {} unified block properties",
-                    cached.size(), this.unifiedItems.size(), this.unifiedBlockProperties.size());
+            log.info("Pre-populated aggregator from cache: {} servers, {} unified items, {} unified block properties, {} unified entity entries",
+                    cached.size(), this.unifiedItems.size(), this.unifiedBlockProperties.size(), this.unifiedEntityEntries.size());
         }
     }
 
@@ -107,6 +108,13 @@ public class DefinitionAggregator {
      * The first server to register an identifier determines its unified runtime ID.
      */
     public synchronized void registerServer(String serverName, List<ItemDefinition> itemDefs, List<BlockPropertyData> blockProps) {
+        if (blockProps == null) {
+            ServerSnapshot existing = this.serverSnapshots.get(serverName);
+            if (existing != null) {
+                blockProps = existing.getBlockProperties();
+            }
+        }
+
         ServerSnapshot snapshot = new ServerSnapshot(itemDefs, blockProps);
         ServerSnapshot previous = this.serverSnapshots.put(serverName, snapshot);
         boolean discoveredNewItems = false;
@@ -117,9 +125,8 @@ public class DefinitionAggregator {
             if (this.unifiedItems.putIfAbsent(def.getIdentifier(), def) == null) {
                 if (previous != null) {
                     // New identifier found from a known server (re-registration with new items)
-                    this.hasNewDefinitions = true;
                     discoveredNewItems = true;
-                    log.info("New item definition discovered from server {}: {} (runtimeId={})",
+                    log.debug("New item definition discovered from server {}: {} (runtimeId={})",
                             serverName, def.getIdentifier(), def.getRuntimeId());
                 }
             }
@@ -127,12 +134,15 @@ public class DefinitionAggregator {
 
         // Aggregate block properties
         for (BlockPropertyData bp : snapshot.blockProperties) {
-            if (this.unifiedBlockProperties.putIfAbsent(bp.getName(), bp) == null) {
+            BlockPropertyData existing = this.unifiedBlockProperties.putIfAbsent(bp.getName(), bp);
+            if (existing == null) {
                 if (previous != null) {
-                    this.hasNewDefinitions = true;
                     discoveredNewBlocks = true;
-                    log.info("New block property discovered from server {}: {}", serverName, bp.getName());
+                    log.debug("New block property discovered from server {}: {}", serverName, bp.getName());
                 }
+            } else if (!existing.getProperties().equals(bp.getProperties())) {
+                log.warn("Block property conflict for '{}': server {} has different properties, using first registered version",
+                        bp.getName(), serverName);
             }
         }
 
@@ -144,7 +154,6 @@ public class DefinitionAggregator {
 
         // Mark new definitions if this is a newly discovered server
         if (previous == null && this.serverSnapshots.size() > 1) {
-            this.hasNewDefinitions = true;
             discoveredNewItems = true;
             discoveredNewBlocks = true;
         }
@@ -160,8 +169,8 @@ public class DefinitionAggregator {
         log.info("Registered definitions from server {}: {} items, {} block properties",
                 serverName, snapshot.itemDefinitions.size(), snapshot.blockProperties.size());
 
-        // Persist to cache asynchronously when definitions changed
-        if ((discoveredNewItems || discoveredNewBlocks || removedDefinitions) && this.cache != null) {
+        boolean dataChanged = previous == null || discoveredNewItems || discoveredNewBlocks || removedDefinitions;
+        if (dataChanged && this.cache != null) {
             Map<String, ServerSnapshot> snapshotsCopy = new LinkedHashMap<>(this.serverSnapshots);
             CompletableFuture.runAsync(() -> this.cache.save(snapshotsCopy));
         }
@@ -236,7 +245,9 @@ public class DefinitionAggregator {
      */
     public synchronized void registerEntityIdentifiers(String serverName, NbtMap identifiers) {
         ServerSnapshot snapshot = this.serverSnapshots.get(serverName);
+        NbtMap previousIdentifiers = null;
         if (snapshot != null) {
+            previousIdentifiers = snapshot.entityIdentifiers;
             snapshot.entityIdentifiers = identifiers;
         }
 
@@ -249,12 +260,80 @@ public class DefinitionAggregator {
             return;
         }
 
+        boolean discoveredNew = false;
         for (NbtMap entry : idlist) {
             String id = entry.getString("id", null);
-            if (id != null) {
-                this.unifiedEntityEntries.putIfAbsent(id, entry);
+            if (id != null && this.unifiedEntityEntries.putIfAbsent(id, entry) == null) {
+                discoveredNew = true;
             }
         }
+
+        // Clean up entities that were in the old snapshot but not in the new one
+        boolean removedEntities = false;
+        if (previousIdentifiers != null) {
+            removedEntities = cleanupRemovedEntities(previousIdentifiers, identifiers);
+        }
+
+        boolean dataChanged = discoveredNew || removedEntities;
+        if (dataChanged && this.cache != null) {
+            Map<String, ServerSnapshot> snapshotsCopy = new LinkedHashMap<>(this.serverSnapshots);
+            CompletableFuture.runAsync(() -> this.cache.save(snapshotsCopy));
+        }
+    }
+
+    /**
+     * Remove entity entries from the unified map that were in the old identifiers
+     * but not in the new ones, and are not present in any other server's snapshot.
+     *
+     * @return true if any entries were removed
+     */
+    private boolean cleanupRemovedEntities(NbtMap oldIdentifiers, NbtMap newIdentifiers) {
+        List<NbtMap> oldList = oldIdentifiers.getList("idlist", NbtType.COMPOUND);
+        if (oldList == null || oldList.isEmpty()) {
+            return false;
+        }
+
+        Set<String> newEntityIds = new HashSet<>();
+        List<NbtMap> newList = newIdentifiers.getList("idlist", NbtType.COMPOUND);
+        if (newList != null) {
+            for (NbtMap entry : newList) {
+                String id = entry.getString("id", null);
+                if (id != null) {
+                    newEntityIds.add(id);
+                }
+            }
+        }
+
+        boolean removed = false;
+        for (NbtMap oldEntry : oldList) {
+            String id = oldEntry.getString("id", null);
+            if (id != null && !newEntityIds.contains(id) && !isEntityUsedByAnyServer(id)) {
+                this.unifiedEntityEntries.remove(id);
+                removed = true;
+            }
+        }
+        return removed;
+    }
+
+    /**
+     * Check if an entity ID is present in any current server snapshot's entity identifiers.
+     */
+    private boolean isEntityUsedByAnyServer(String entityId) {
+        for (ServerSnapshot snap : this.serverSnapshots.values()) {
+            if (snap.entityIdentifiers == null) {
+                continue;
+            }
+            List<NbtMap> idlist = snap.entityIdentifiers.getList("idlist", NbtType.COMPOUND);
+            if (idlist == null) {
+                continue;
+            }
+            for (NbtMap entry : idlist) {
+                if (entityId.equals(entry.getString("id", null))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -326,8 +405,13 @@ public class DefinitionAggregator {
      */
     public synchronized SimpleDefinitionRegistry<ItemDefinition> buildUnifiedItemRegistry() {
         SimpleDefinitionRegistry.Builder<ItemDefinition> builder = SimpleDefinitionRegistry.builder();
+        IntSet runtimeIds = new IntOpenHashSet();
         for (ItemDefinition def : this.unifiedItems.values()) {
-            builder.add(def);
+            if (runtimeIds.add(def.getRuntimeId())) {
+                builder.add(def);
+            } else {
+                log.warn("Skipping item with duplicate runtime ID {}: {}", def.getRuntimeId(), def.getIdentifier());
+            }
         }
         return builder.build();
     }
@@ -357,15 +441,6 @@ public class DefinitionAggregator {
         return NbtMap.builder()
                 .putList("idlist", NbtType.COMPOUND, new ArrayList<>(this.unifiedEntityEntries.values()))
                 .build();
-    }
-
-    /**
-     * Check and reset the "new definitions discovered" flag.
-     */
-    public boolean checkAndResetNewDefinitions() {
-        boolean had = this.hasNewDefinitions;
-        this.hasNewDefinitions = false;
-        return had;
     }
 
     /**

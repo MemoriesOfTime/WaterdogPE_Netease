@@ -33,6 +33,8 @@ public interface ClientConnection extends ProxiedConnection {
 
     ProxiedPlayer getPlayer();
 
+    BedrockCodecHelper getCodecHelper();
+
     void setCodecHelper(BedrockCodec codec, BedrockCodecHelper helper);
 
     default void enableEncryption(SecretKey secretKey) {

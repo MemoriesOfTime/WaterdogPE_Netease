@@ -131,7 +131,7 @@ public class InitialHandler extends AbstractDownstreamHandler {
             this.player.getRewriteMaps().setBlockMap(new BlockMapSimple(this.player));
         }
 
-        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator();
+        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator(this.player.getProtocol(), this.player.isNetEaseClient());
         BedrockCodecHelper upstreamHelper = this.player.getConnection()
                 .getPeer()
                 .getCodecHelper();

@@ -103,10 +103,7 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
                 log.warn("Received unhandled packets for {}", this.getSocketAddress());
             }
         } catch (Exception e) {
-            log.error("批处理包处理发生严重错误: {} - {}", e.getClass().getSimpleName(), e.getMessage());
-            if (log.isDebugEnabled()) {
-                log.debug("批处理包错误详细信息:", e);
-            }
+            log.error("批处理包处理发生严重错误: {} - {}", e.getClass().getSimpleName(), e.getMessage(), e);
         }
     }
 
@@ -181,13 +178,18 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
         Objects.requireNonNull(codec, "codec");
         Objects.requireNonNull(helper, "helper");
         this.channel.pipeline().get(BedrockPacketCodec.class).setCodecHelper(codec, helper);
+        if (this.packetHandler instanceof ProxyBatchBridge bridge) {
+            bridge.setCodec(codec);
+            bridge.setHelper(helper);
+        }
     }
 
     private BedrockCodec getCodec() {
         return this.channel.pipeline().get(BedrockPacketCodec.class).getCodec();
     }
 
-    private BedrockCodecHelper getCodecHelper() {
+    @Override
+    public BedrockCodecHelper getCodecHelper() {
         return this.channel.pipeline().get(BedrockPacketCodec.class).getHelper();
     }
 

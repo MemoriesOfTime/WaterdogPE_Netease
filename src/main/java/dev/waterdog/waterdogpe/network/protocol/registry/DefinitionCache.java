@@ -47,8 +47,9 @@ public class DefinitionCache {
 
     private final Path cacheFile;
 
-    public DefinitionCache(Path dataPath) {
-        this.cacheFile = dataPath.resolve("definition_cache.json");
+    public DefinitionCache(Path dataPath, int protocolVersion, boolean netease) {
+        String fileName = netease ? protocolVersion + "_netease.json" : protocolVersion + ".json";
+        this.cacheFile = dataPath.resolve("cache").resolve("definition").resolve(fileName);
     }
 
     /**
@@ -128,6 +129,8 @@ public class DefinitionCache {
             block.nbt = nbtToBase64(bp.getProperties());
             cached.blockProperties.add(block);
         }
+
+        cached.entityIdentifiers = nbtToBase64(snapshot.getEntityIdentifiers());
         return cached;
     }
 
@@ -149,7 +152,12 @@ public class DefinitionCache {
             }
         }
 
-        return new LoadedSnapshot(items, blocks);
+        NbtMap entityIdentifiers = null;
+        if (cached.entityIdentifiers != null) {
+            entityIdentifiers = base64ToNbt(cached.entityIdentifiers);
+        }
+
+        return new LoadedSnapshot(items, blocks, entityIdentifiers);
     }
 
     private static String nbtToBase64(NbtMap nbtMap) {
@@ -182,13 +190,14 @@ public class DefinitionCache {
     /**
      * Loaded snapshot ready for use with DefinitionAggregator.registerServer().
      */
-    public record LoadedSnapshot(List<ItemDefinition> items, List<BlockPropertyData> blockProperties) {
+    public record LoadedSnapshot(List<ItemDefinition> items, List<BlockPropertyData> blockProperties, NbtMap entityIdentifiers) {
     }
 
     // JSON data model
     private static class CachedServerSnapshot {
         List<CachedItemDef> items;
         List<CachedBlockProperty> blockProperties;
+        String entityIdentifiers; // base64 encoded NBT
     }
 
     private static class CachedItemDef {

@@ -36,6 +36,11 @@ import org.cloudburstmc.protocol.bedrock.data.command.CommandEnumConstraint;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandEnumData;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleNamedDefinition;
+import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.ContainerMixData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.MaterialReducer;
+import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.PotionMixData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.recipe.FurnaceRecipeData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.recipe.RecipeData;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.common.NamedDefinition;
@@ -64,7 +69,7 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         }
         player.setAcceptItemComponentPacket(false);
 
-        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator();
+        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator(this.player.getProtocol(), this.player.isNetEaseClient());
 
         if (aggregator != null && this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_60)) {
             // Registry aggregation: collect items, inject unified set
@@ -174,7 +179,7 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
 
     @Override
     public PacketSignal handle(AvailableEntityIdentifiersPacket packet) {
-        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator();
+        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator(this.player.getProtocol(), this.player.isNetEaseClient());
         if (aggregator == null) {
             return PacketSignal.UNHANDLED;
         }
@@ -193,7 +198,7 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
 
     @Override
     public PacketSignal handle(CreativeContentPacket packet) {
-        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator();
+        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator(this.player.getProtocol(), this.player.isNetEaseClient());
         if (aggregator == null) {
             return PacketSignal.UNHANDLED;
         }
@@ -202,6 +207,64 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         // during deserialization, so the ItemData already contains unified IDs at this point.
         // No additional translation is needed here.
         return PacketSignal.UNHANDLED;
+    }
+
+    @Override
+    public PacketSignal handle(CraftingDataPacket packet) {
+        ServerIdMapping mapping = this.player.getRewriteData().getCurrentMapping();
+        if (mapping == null || mapping.isIdentity()) {
+            return PacketSignal.UNHANDLED;
+        }
+
+        // Translate FurnaceRecipeData raw inputId (FURNACE / FURNACE_DATA types)
+        List<RecipeData> craftingData = packet.getCraftingData();
+        for (int i = 0; i < craftingData.size(); i++) {
+            RecipeData recipe = craftingData.get(i);
+            if (recipe instanceof FurnaceRecipeData furnace) {
+                int newInputId = mapping.translateItemId(furnace.getInputId());
+                if (newInputId != furnace.getInputId()) {
+                    craftingData.set(i, FurnaceRecipeData.of(furnace.getType(), newInputId,
+                            furnace.getInputData(), furnace.getResult(), furnace.getTag()));
+                }
+            }
+        }
+
+        // Translate PotionMixData raw IDs
+        List<PotionMixData> potionMixData = packet.getPotionMixData();
+        for (int i = 0; i < potionMixData.size(); i++) {
+            PotionMixData potion = potionMixData.get(i);
+            int newInputId = mapping.translateItemId(potion.getInputId());
+            int newReagentId = mapping.translateItemId(potion.getReagentId());
+            int newOutputId = mapping.translateItemId(potion.getOutputId());
+            if (newInputId != potion.getInputId() || newReagentId != potion.getReagentId() || newOutputId != potion.getOutputId()) {
+                potionMixData.set(i, new PotionMixData(newInputId, potion.getInputMeta(),
+                        newReagentId, potion.getReagentMeta(), newOutputId, potion.getOutputMeta()));
+            }
+        }
+
+        // Translate ContainerMixData raw IDs
+        List<ContainerMixData> containerMixData = packet.getContainerMixData();
+        for (int i = 0; i < containerMixData.size(); i++) {
+            ContainerMixData container = containerMixData.get(i);
+            int newInputId = mapping.translateItemId(container.getInputId());
+            int newReagentId = mapping.translateItemId(container.getReagentId());
+            int newOutputId = mapping.translateItemId(container.getOutputId());
+            if (newInputId != container.getInputId() || newReagentId != container.getReagentId() || newOutputId != container.getOutputId()) {
+                containerMixData.set(i, new ContainerMixData(newInputId, newReagentId, newOutputId));
+            }
+        }
+
+        // Translate MaterialReducer raw inputId
+        List<MaterialReducer> materialReducers = packet.getMaterialReducers();
+        for (int i = 0; i < materialReducers.size(); i++) {
+            MaterialReducer reducer = materialReducers.get(i);
+            int newInputId = mapping.translateItemId(reducer.getInputId());
+            if (newInputId != reducer.getInputId()) {
+                materialReducers.set(i, new MaterialReducer(newInputId, reducer.getItemCounts()));
+            }
+        }
+
+        return PacketSignal.HANDLED;
     }
 
     protected PacketSignal onPlayStatus(PlayStatusPacket packet, Consumer<String> failedTask, ClientConnection connection) {
@@ -235,9 +298,6 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
     }
 
     protected void setItemDefinitions(Collection<ItemDefinition> definitions) {
-        BedrockCodecHelper codecHelper = this.player.getConnection()
-                .getPeer()
-                .getCodecHelper();
         SimpleDefinitionRegistry.Builder<ItemDefinition> itemRegistry = SimpleDefinitionRegistry.builder();
         IntSet runtimeIds = new IntOpenHashSet();
         for (ItemDefinition definition : definitions) {
@@ -247,7 +307,9 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
                 player.getLogger().warning("[{}|{}] has duplicate item definition: {}", this.player.getName(), this.connection.getServerInfo().getServerName(), definition);
             }
         }
-        codecHelper.setItemDefinitions(itemRegistry.build());
+        SimpleDefinitionRegistry<ItemDefinition> registry = itemRegistry.build();
+        this.player.getConnection().getPeer().getCodecHelper().setItemDefinitions(registry);
+        this.connection.getCodecHelper().setItemDefinitions(registry);
     }
 
     protected void setCameraPresetDefinitions(Collection<CameraPreset> presets) {
@@ -268,11 +330,13 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
      */
     protected void setupDownstreamTranslatingRegistry(ServerIdMapping mapping, String serverName, DefinitionAggregator aggregator) {
         if (mapping.isIdentity()) {
+            this.connection.getCodecHelper().setItemDefinitions(aggregator.buildUnifiedItemRegistry());
             return;
         }
 
         TranslatingItemRegistry translatingRegistry = aggregator.buildTranslatingRegistry(serverName);
         if (translatingRegistry == null) {
+            this.connection.getCodecHelper().setItemDefinitions(aggregator.buildUnifiedItemRegistry());
             return;
         }
 

@@ -36,6 +36,7 @@ import dev.waterdog.waterdogpe.network.connection.handler.IReconnectHandler;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolCodecs;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.network.protocol.registry.DefinitionAggregator;
+import dev.waterdog.waterdogpe.network.protocol.registry.DefinitionCache;
 import dev.waterdog.waterdogpe.network.protocol.updaters.CodecUpdaterCommands;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfoMap;
@@ -118,8 +119,7 @@ public class ProxyServer {
     private final SecurityManager securityManager;
     @Getter
     private final ErrorReporting errorReporting;
-    @Getter
-    private DefinitionAggregator definitionAggregator;
+    private ConcurrentHashMap<String, DefinitionAggregator> definitionAggregators;
 
     @Setter
     @Getter
@@ -254,10 +254,8 @@ public class ProxyServer {
         }
 
         if (this.getConfiguration().enableRegistryAggregation()) {
-            this.definitionAggregator = new DefinitionAggregator();
-            this.definitionAggregator.initFromCache(
-                    new dev.waterdog.waterdogpe.network.protocol.registry.DefinitionCache(this.dataPath));
-            this.logger.info("Registry aggregation enabled. Custom definitions from downstream servers will be unified.");
+            this.definitionAggregators = new ConcurrentHashMap<>();
+            this.logger.info("Registry aggregation enabled. Custom definitions from downstream servers will be unified per protocol version.");
         }
 
         if (this.getConfiguration().enableResourcePacks()) {
@@ -433,6 +431,26 @@ public class ProxyServer {
         DispatchCommandEvent event = new DispatchCommandEvent(sender, args[0], shiftedArgs);
         this.eventManager.callEvent(event);
         return !event.isCancelled() && this.commandMap.handleCommand(sender, args[0], shiftedArgs);
+    }
+
+    /**
+     * 获取指定协议版本的 DefinitionAggregator。
+     * 网易客户端和国际版客户端使用独立的聚合器。
+     * 返回 null 表示 registry aggregation 未启用。
+     */
+    public DefinitionAggregator getDefinitionAggregator(ProtocolVersion version, boolean netease) {
+        if (this.definitionAggregators == null) {
+            return null;
+        }
+        String key = netease ? version.getProtocol() + "_netease" : String.valueOf(version.getProtocol());
+        return this.definitionAggregators.computeIfAbsent(
+                key,
+                k -> {
+                    DefinitionAggregator agg = new DefinitionAggregator();
+                    agg.initFromCache(new DefinitionCache(this.dataPath, version.getProtocol(), netease));
+                    return agg;
+                }
+        );
     }
 
     public boolean isRunning() {

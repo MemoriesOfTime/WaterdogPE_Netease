@@ -128,7 +128,7 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
         }
 
         // Registry aggregation: register new server's definitions and update mapping
-        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator();
+        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator(this.player.getProtocol(), this.player.isNetEaseClient());
         if (aggregator != null) {
             String serverName = this.connection.getServerInfo().getServerName();
             java.util.List<ItemDefinition> serverItemDefs = packet.getItemDefinitions();

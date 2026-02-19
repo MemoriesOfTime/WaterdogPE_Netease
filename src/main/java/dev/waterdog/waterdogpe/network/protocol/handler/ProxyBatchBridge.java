@@ -36,8 +36,8 @@ import java.util.ListIterator;
 @Data
 @Log4j2
 public class ProxyBatchBridge implements BedrockPacketHandler {
-    private final BedrockCodec codec;
-    private final BedrockCodecHelper helper;
+    private BedrockCodec codec;
+    private BedrockCodecHelper helper;
 
     private ProxyPacketHandler handler;
     private boolean forceEncode;
@@ -101,8 +101,7 @@ public class ProxyBatchBridge implements BedrockPacketHandler {
         } catch (IllegalArgumentException e) {
             log.warn("Skipping packet with wrong direction (packetId={}): {}", wrapper.getPacketId(), e.getMessage());
         } catch (Throwable t) {
-            log.warn("Failed to decode packet", t);
-            throw t;
+            log.warn("Failed to decode packet (packetId={})", wrapper.getPacketId(), t);
         } finally {
             msg.release();
         }
