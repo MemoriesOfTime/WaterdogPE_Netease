@@ -35,6 +35,7 @@ import dev.waterdog.waterdogpe.network.connection.handler.IJoinHandler;
 import dev.waterdog.waterdogpe.network.connection.handler.IReconnectHandler;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolCodecs;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
+import dev.waterdog.waterdogpe.network.protocol.registry.DefinitionAggregator;
 import dev.waterdog.waterdogpe.network.protocol.updaters.CodecUpdaterCommands;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfoMap;
@@ -117,6 +118,8 @@ public class ProxyServer {
     private final SecurityManager securityManager;
     @Getter
     private final ErrorReporting errorReporting;
+    @Getter
+    private DefinitionAggregator definitionAggregator;
 
     @Setter
     @Getter
@@ -248,6 +251,11 @@ public class ProxyServer {
         if (this.getConfiguration().isEnableAnonymousStatistics()) {
             this.getLogger().info("Enabling anonymous statistics.");
             Metrics.startMetrics(this, this.getConfiguration());
+        }
+
+        if (this.getConfiguration().enableRegistryAggregation()) {
+            this.definitionAggregator = new DefinitionAggregator();
+            this.logger.info("Registry aggregation enabled. Custom definitions from downstream servers will be unified.");
         }
 
         if (this.getConfiguration().enableResourcePacks()) {

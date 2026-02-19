@@ -17,6 +17,7 @@ package dev.waterdog.waterdogpe.network.protocol.rewrite.types;
 
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
+import dev.waterdog.waterdogpe.network.protocol.registry.ServerIdMapping;
 import lombok.Getter;
 import lombok.Setter;
 import org.cloudburstmc.math.vector.Vector2f;
@@ -85,6 +86,27 @@ public class RewriteData {
 
     @Getter
     private BedrockCodecHelper codecHelper;
+
+    /**
+     * Current item ID mapping between the connected downstream server and the unified registry.
+     * Null when registry aggregation is disabled.
+     */
+    @Getter
+    private ServerIdMapping currentMapping;
+
+    /**
+     * The item definition version the client received during initial connect.
+     * Used to detect stale item definitions for <= 1.21.50 clients.
+     */
+    @Getter
+    private int clientItemDefinitionVersion;
+
+    /**
+     * The block definition version the client received during initial connect.
+     * Used to detect stale block definitions for all clients.
+     */
+    @Getter
+    private int clientBlockDefinitionVersion;
 
     public RewriteData() {
         this.proxyName = ProxyServer.getInstance().getConfiguration().getName();

@@ -15,21 +15,25 @@
 
 package dev.waterdog.waterdogpe.network.protocol.handler.upstream;
 
+import dev.waterdog.waterdogpe.ProxyServer;
+import dev.waterdog.waterdogpe.event.defaults.PlayerChatEvent;
 import dev.waterdog.waterdogpe.network.connection.ProxiedConnection;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
+import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
+import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.handler.ProxyPacketHandler;
+import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
+import dev.waterdog.waterdogpe.network.protocol.registry.ReverseItemRewriter;
+import dev.waterdog.waterdogpe.network.protocol.registry.ServerIdMapping;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.RewriteMaps;
+import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import lombok.Setter;
 import org.cloudburstmc.protocol.bedrock.data.PlayerActionType;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import dev.waterdog.waterdogpe.ProxyServer;
-import dev.waterdog.waterdogpe.event.defaults.PlayerChatEvent;
-import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
-import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
-import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import dev.waterdog.waterdogpe.network.protocol.Signals;
 import org.cloudburstmc.protocol.common.PacketSignal;
+
+import static dev.waterdog.waterdogpe.network.protocol.Signals.mergeSignals;
 
 /**
  * Main handler for handling packets received from upstream.
@@ -95,6 +99,20 @@ public class ConnectedUpstreamHandler extends AbstractUpstreamHandler implements
             this.player.getChunkBlobs().addAll(packet.getNaks());
         }
         return PacketSignal.UNHANDLED;
+    }
+
+    @Override
+    public PacketSignal doPacketRewrite(BedrockPacket packet) {
+        PacketSignal signal = ProxyPacketHandler.super.doPacketRewrite(packet);
+
+        // Reverse item ID translation: unified IDs → server IDs
+        ServerIdMapping mapping = this.player.getRewriteData().getCurrentMapping();
+        if (mapping != null && !mapping.isIdentity()) {
+            ReverseItemRewriter rewriter = new ReverseItemRewriter(mapping);
+            signal = mergeSignals(signal, rewriter.doRewrite(packet));
+        }
+
+        return signal;
     }
 
     @Override

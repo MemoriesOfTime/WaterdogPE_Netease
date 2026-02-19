@@ -208,6 +208,25 @@ public class ProxyConfig extends YamlConfig {
     @Comment("Maximum size in bytes for decompressed packet data. Default is 50MB (52428800). Increase if you encounter decompression errors with large packets.")
     private int maxDecompressedBytes = 52428800;
 
+    @Path("enable_registry_aggregation")
+    @Accessors(fluent = true)
+    @Comments({
+            "If enabled, the proxy will aggregate custom item, block, and entity definitions from all downstream servers.",
+            "Players receive a unified definition set on initial connect. Item runtime IDs are translated transparently.",
+            "This allows custom items/blocks from different servers to coexist without conflicts."
+    })
+    private boolean enableRegistryAggregation = false;
+
+    @Path("proxy_public_address")
+    @Comments({
+            "The public address that clients can use to reconnect to this proxy.",
+            "Required when enable_registry_aggregation is enabled and you need to support <=1.21.50 clients.",
+            "When a client's cached definitions become stale, the proxy will send a TransferPacket to this address",
+            "to force a reconnect and refresh definitions. Leave empty to disable this behavior.",
+            "Example: play.example.com"
+    })
+    private String proxyPublicAddress = "";
+
     public ProxyConfig(File file) {
         this.CONFIG_HEADER = new String[]{"Waterdog Main Configuration file", "Configure your desired network settings here."};
         this.CONFIG_FILE = file;

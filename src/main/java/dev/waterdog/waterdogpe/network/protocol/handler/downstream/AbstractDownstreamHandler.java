@@ -18,12 +18,17 @@ package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 import dev.waterdog.waterdogpe.command.Command;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
+import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.handler.ProxyPacketHandler;
+import dev.waterdog.waterdogpe.network.protocol.registry.DefinitionAggregator;
+import dev.waterdog.waterdogpe.network.protocol.registry.FakeDefinitionRegistry;
+import dev.waterdog.waterdogpe.network.protocol.registry.ServerIdMapping;
+import dev.waterdog.waterdogpe.network.protocol.registry.TranslatingItemRegistry;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.RewriteMaps;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import dev.waterdog.waterdogpe.network.protocol.Signals;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
+import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
 import org.cloudburstmc.protocol.bedrock.data.camera.CameraPreset;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandData;
@@ -58,9 +63,30 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
             return Signals.CANCEL;
         }
         player.setAcceptItemComponentPacket(false);
-        if (this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_60)) {
+
+        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator();
+
+        if (aggregator != null && this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_60)) {
+            // Registry aggregation: collect items, inject unified set
+            String serverName = this.connection.getServerInfo().getServerName();
+            aggregator.registerServer(serverName, packet.getItems(), null);
+
+            // Set upstream helper with unified item registry
+            BedrockCodecHelper upstreamHelper = this.player.getConnection().getPeer().getCodecHelper();
+            upstreamHelper.setItemDefinitions(aggregator.buildUnifiedItemRegistry());
+
+            // Replace packet items with unified definitions for client
+            packet.getItems().clear();
+            packet.getItems().addAll(aggregator.getUnifiedItemDefinitions());
+
+            // Create mapping and setup downstream translating registry
+            ServerIdMapping mapping = aggregator.createMapping(serverName);
+            this.player.getRewriteData().setCurrentMapping(mapping);
+            setupDownstreamTranslatingRegistry(mapping, serverName, aggregator);
+        } else if (this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_60)) {
             setItemDefinitions(packet.getItems());
         }
+
         return PacketSignal.UNHANDLED;
     }
 
@@ -146,6 +172,38 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         return PacketSignal.UNHANDLED;
     }
 
+    @Override
+    public PacketSignal handle(AvailableEntityIdentifiersPacket packet) {
+        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator();
+        if (aggregator == null) {
+            return PacketSignal.UNHANDLED;
+        }
+
+        String serverName = this.connection.getServerInfo().getServerName();
+        aggregator.registerEntityIdentifiers(serverName, packet.getIdentifiers());
+
+        // Replace with merged entity identifiers
+        org.cloudburstmc.nbt.NbtMap merged = aggregator.getMergedEntityIdentifiers();
+        if (merged != null) {
+            packet.setIdentifiers(merged);
+            return PacketSignal.HANDLED;
+        }
+        return PacketSignal.UNHANDLED;
+    }
+
+    @Override
+    public PacketSignal handle(CreativeContentPacket packet) {
+        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator();
+        if (aggregator == null) {
+            return PacketSignal.UNHANDLED;
+        }
+
+        // Creative content ItemData is automatically translated by the downstream TranslatingItemRegistry
+        // during deserialization, so the ItemData already contains unified IDs at this point.
+        // No additional translation is needed here.
+        return PacketSignal.UNHANDLED;
+    }
+
     protected PacketSignal onPlayStatus(PlayStatusPacket packet, Consumer<String> failedTask, ClientConnection connection) {
         String message;
         switch (packet.getStatus()) {
@@ -202,5 +260,34 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
             registry.add(new SimpleNamedDefinition(preset.getIdentifier(), id++));
         }
         codecHelper.setCameraPresetDefinitions(registry.build());
+    }
+
+    /**
+     * Creates a separate BedrockCodecHelper for the downstream connection with TranslatingItemRegistry.
+     * Shared across InitialHandler and SwitchDownstreamHandler.
+     */
+    protected void setupDownstreamTranslatingRegistry(ServerIdMapping mapping, String serverName, DefinitionAggregator aggregator) {
+        if (mapping.isIdentity()) {
+            return;
+        }
+
+        TranslatingItemRegistry translatingRegistry = aggregator.buildTranslatingRegistry(serverName);
+        if (translatingRegistry == null) {
+            return;
+        }
+
+        ProtocolVersion protocol = this.player.getProtocol();
+        BedrockCodec codec = this.player.isNetEaseClient() ? protocol.getNetEaseCodec() : protocol.getCodec();
+        BedrockCodecHelper downstreamHelper = codec.createHelper();
+        downstreamHelper.setBlockDefinitions(FakeDefinitionRegistry.createBlockRegistry());
+        downstreamHelper.setItemDefinitions(translatingRegistry);
+
+        // Copy camera preset definitions if already set
+        BedrockCodecHelper upstreamHelper = this.player.getConnection().getPeer().getCodecHelper();
+        if (upstreamHelper.getCameraPresetDefinitions() != null) {
+            downstreamHelper.setCameraPresetDefinitions(upstreamHelper.getCameraPresetDefinitions());
+        }
+
+        this.connection.setCodecHelper(codec, downstreamHelper);
     }
 }

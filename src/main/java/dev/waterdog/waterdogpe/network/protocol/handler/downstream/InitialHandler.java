@@ -16,21 +16,24 @@
 package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 
 import com.nimbusds.jwt.SignedJWT;
+import dev.waterdog.waterdogpe.event.defaults.InitialServerConnectedEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
-import dev.waterdog.waterdogpe.network.protocol.registry.FakeDefinitionRegistry;
-import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
-import org.cloudburstmc.protocol.bedrock.packet.*;
-import dev.waterdog.waterdogpe.event.defaults.InitialServerConnectedEvent;
-import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
+import dev.waterdog.waterdogpe.network.protocol.Signals;
+import dev.waterdog.waterdogpe.network.protocol.registry.DefinitionAggregator;
+import dev.waterdog.waterdogpe.network.protocol.registry.FakeDefinitionRegistry;
+import dev.waterdog.waterdogpe.network.protocol.registry.ServerIdMapping;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.BlockMap;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.BlockMapSimple;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.BlockPalette;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
+import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
+import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
+import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
+import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.bedrock.util.EncryptionUtils;
 import org.cloudburstmc.protocol.common.PacketSignal;
 
@@ -38,6 +41,7 @@ import javax.crypto.SecretKey;
 import java.net.URI;
 import java.security.interfaces.ECPublicKey;
 import java.util.Base64;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 public class InitialHandler extends AbstractDownstreamHandler {
@@ -127,15 +131,50 @@ public class InitialHandler extends AbstractDownstreamHandler {
             this.player.getRewriteMaps().setBlockMap(new BlockMapSimple(this.player));
         }
 
-        BedrockCodecHelper codecHelper = this.player.getConnection()
+        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator();
+        BedrockCodecHelper upstreamHelper = this.player.getConnection()
                 .getPeer()
                 .getCodecHelper();
-        // Setup item registry. After 1.21.60 these are sent with ItemComponentPacket instead.
-        if (this.player.getProtocol().isBeforeOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_50)) {
-            setItemDefinitions(packet.getItemDefinitions());
+
+        if (aggregator != null) {
+            // Registry aggregation enabled: collect, aggregate, and set up translating registries
+            String serverName = this.connection.getServerInfo().getServerName();
+            List<ItemDefinition> serverItemDefs = packet.getItemDefinitions();
+
+            aggregator.registerServer(serverName, serverItemDefs, packet.getBlockProperties());
+
+            // Setup item definitions on upstream helper (client-facing): unified registry
+            // For ≤1.21.50, items come from StartGamePacket; for ≥1.21.60, from ItemComponentPacket
+            if (this.player.getProtocol().isBeforeOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_50)) {
+                upstreamHelper.setItemDefinitions(aggregator.buildUnifiedItemRegistry());
+                // Replace packet's item definitions with unified set for client
+                packet.getItemDefinitions().clear();
+                packet.getItemDefinitions().addAll(aggregator.getUnifiedItemDefinitions());
+            }
+
+            // Replace block properties with unified set for client
+            packet.getBlockProperties().clear();
+            packet.getBlockProperties().addAll(aggregator.getUnifiedBlockProperties());
+            rewriteData.setBlockProperties(packet.getBlockProperties());
+
+            // Record the definition versions the client received
+            rewriteData.setClientItemDefinitionVersion(aggregator.getItemDefinitionVersion());
+            rewriteData.setClientBlockDefinitionVersion(aggregator.getBlockDefinitionVersion());
+
+            // Create mapping and set up downstream translating registry
+            ServerIdMapping mapping = aggregator.createMapping(serverName);
+            rewriteData.setCurrentMapping(mapping);
+            setupDownstreamTranslatingRegistry(mapping, serverName, aggregator);
+        } else {
+            // Original behavior: no aggregation
+            // Setup item registry. After 1.21.60 these are sent with ItemComponentPacket instead.
+            if (this.player.getProtocol().isBeforeOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_50)) {
+                setItemDefinitions(packet.getItemDefinitions());
+            }
         }
+
         // Setup block registry
-        codecHelper.setBlockDefinitions(FakeDefinitionRegistry.createBlockRegistry());
+        upstreamHelper.setBlockDefinitions(FakeDefinitionRegistry.createBlockRegistry());
         // Enable runtimeId rewrite
         this.player.setCanRewrite(true);
 
@@ -144,6 +183,16 @@ public class InitialHandler extends AbstractDownstreamHandler {
 
         this.connection.setPacketHandler(new ConnectedDownstreamHandler(this.player, this.connection));
         this.player.getProxy().getEventManager().callEvent(new InitialServerConnectedEvent(this.player, this.connection));
+
+        // Check if this player has a pending refresh target (reconnected after definition refresh)
+        if (aggregator != null) {
+            ServerInfo pendingTarget = aggregator.removePendingRefreshTarget(this.player.getUniqueId());
+            if (pendingTarget != null) {
+                this.player.getProxy().getScheduler().scheduleDelayed(
+                        () -> this.player.connect(pendingTarget), 20);
+            }
+        }
         return PacketSignal.HANDLED;
     }
+
 }

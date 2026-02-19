@@ -119,6 +119,12 @@ public class ProtocolCodecs {
         HANDLED_PACKETS.add(PlayerUpdateEntityOverridesPacket.class);
         HANDLED_PACKETS.add(PlayerLocationPacket.class);
         HANDLED_PACKETS.add(CameraPresetsPacket.class);
+        // Inventory/crafting packets required for custom item registry aggregation
+        HANDLED_PACKETS.add(InventoryContentPacket.class);
+        HANDLED_PACKETS.add(InventorySlotPacket.class);
+        HANDLED_PACKETS.add(InventoryTransactionPacket.class);
+        HANDLED_PACKETS.add(CraftingDataPacket.class);
+        HANDLED_PACKETS.add(CreativeContentPacket.class);
     }
 
     private static final List<ProtocolCodecUpdater> UPDATERS = new ObjectArrayList<>();

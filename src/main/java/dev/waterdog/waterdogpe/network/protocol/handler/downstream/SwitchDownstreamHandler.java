@@ -16,27 +16,33 @@
 package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 
 import com.nimbusds.jwt.SignedJWT;
+import dev.waterdog.waterdogpe.event.defaults.ServerTransferEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
+import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
+import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
+import dev.waterdog.waterdogpe.network.protocol.registry.DefinitionAggregator;
+import dev.waterdog.waterdogpe.network.protocol.registry.ServerIdMapping;
+import dev.waterdog.waterdogpe.network.protocol.rewrite.types.BlockPalette;
+import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
+import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
+import dev.waterdog.waterdogpe.player.ProxiedPlayer;
+import dev.waterdog.waterdogpe.utils.config.proxy.ProxyConfig;
+import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
+import it.unimi.dsi.fastutil.longs.Long2LongMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+import it.unimi.dsi.fastutil.longs.LongSet;
+import it.unimi.dsi.fastutil.objects.ObjectSet;
 import lombok.extern.log4j.Log4j2;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.data.ScoreInfo;
+import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import dev.waterdog.waterdogpe.event.defaults.ServerTransferEvent;
-import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
-import dev.waterdog.waterdogpe.network.protocol.rewrite.types.BlockPalette;
-import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
-import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import dev.waterdog.waterdogpe.network.protocol.Signals;
-import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
-import it.unimi.dsi.fastutil.longs.Long2LongMap;
-import it.unimi.dsi.fastutil.longs.LongSet;
-import it.unimi.dsi.fastutil.objects.ObjectSet;
 import org.cloudburstmc.protocol.bedrock.util.EncryptionUtils;
 import org.cloudburstmc.protocol.common.PacketSignal;
 
 import javax.crypto.SecretKey;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.security.interfaces.ECPublicKey;
 import java.util.Base64;
@@ -119,6 +125,64 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
             rewriteData.setBlockPaletteRewrite(palette.createRewrite(rewriteData.getBlockPalette()));
         } else {
             rewriteData.setBlockProperties(packet.getBlockProperties());
+        }
+
+        // Registry aggregation: register new server's definitions and update mapping
+        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator();
+        if (aggregator != null) {
+            String serverName = this.connection.getServerInfo().getServerName();
+            java.util.List<ItemDefinition> serverItemDefs = packet.getItemDefinitions();
+            aggregator.registerServer(serverName, serverItemDefs, packet.getBlockProperties());
+
+            // Update block properties to unified set (consistent with InitialHandler)
+            if (this.player.getProtocol().isAfter(ProtocolVersion.MINECRAFT_PE_1_16_20)) {
+                rewriteData.setBlockProperties(aggregator.getUnifiedBlockProperties());
+            }
+
+            ServerIdMapping mapping = aggregator.createMapping(serverName);
+            rewriteData.setCurrentMapping(mapping);
+            setupDownstreamTranslatingRegistry(mapping, serverName, aggregator);
+
+            // Reset so the new server can send ItemComponentPacket (for ≥1.21.60)
+            this.player.setAcceptItemComponentPacket(true);
+
+            // Check if client has stale definitions and needs a reconnect refresh.
+            // For <= 1.21.50: items are in StartGamePacket only, so both item and block staleness require refresh.
+            // For >= 1.21.60: items are refreshed via ItemComponentPacket, so only block staleness requires refresh.
+            boolean staleItems = rewriteData.getClientItemDefinitionVersion() < aggregator.getItemDefinitionVersion();
+            boolean staleBlocks = rewriteData.getClientBlockDefinitionVersion() < aggregator.getBlockDefinitionVersion();
+            boolean needsRefresh = staleBlocks
+                    || (staleItems && this.player.getProtocol().isBeforeOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_50));
+
+            if (needsRefresh) {
+                ProxyConfig config = this.player.getProxy().getConfiguration();
+                String publicAddress = config.getProxyPublicAddress();
+                if (publicAddress != null && !publicAddress.isEmpty()) {
+                    ServerInfo targetServer = this.connection.getServerInfo();
+                    log.info("[{}] Client definitions are stale (items: {}->{}, blocks: {}->{}), triggering reconnect refresh for transfer to {}",
+                            this.player.getName(),
+                            rewriteData.getClientItemDefinitionVersion(), aggregator.getItemDefinitionVersion(),
+                            rewriteData.getClientBlockDefinitionVersion(), aggregator.getBlockDefinitionVersion(),
+                            targetServer.getServerName());
+
+                    // Store the intended target server for after reconnect
+                    aggregator.addPendingRefreshTarget(this.player.getUniqueId(), targetServer);
+
+                    // Send a hint message to the client
+                    this.player.sendMessage("§eRefreshing game data, please wait...");
+
+                    // Disconnect the new downstream connection (we won't use it)
+                    this.connection.disconnect();
+
+                    // Send TransferPacket to make the client reconnect to proxy
+                    InetSocketAddress bindAddress = config.getBindAddress();
+                    TransferPacket transferPacket = new TransferPacket();
+                    transferPacket.setAddress(publicAddress);
+                    transferPacket.setPort(bindAddress.getPort());
+                    this.player.getConnection().sendPacket(transferPacket);
+                    return Signals.CANCEL;
+                }
+            }
         }
 
         if (!this.player.isConnected()) {
