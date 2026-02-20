@@ -133,6 +133,7 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
             String serverName = this.connection.getServerInfo().getServerName();
             java.util.List<ItemDefinition> serverItemDefs = packet.getItemDefinitions();
             aggregator.registerServer(serverName, serverItemDefs, packet.getBlockProperties());
+            aggregator.registerBlockNetworkIdsHashed(serverName, packet.isBlockNetworkIdsHashed());
 
             // Update block properties to unified set (consistent with InitialHandler)
             if (this.player.getProtocol().isAfter(ProtocolVersion.MINECRAFT_PE_1_16_20)) {
@@ -146,12 +147,13 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
             // Reset so the new server can send ItemComponentPacket (for ≥1.21.60)
             this.player.setAcceptItemComponentPacket(true);
 
-            // Check if client has stale definitions and needs a reconnect refresh.
+            // Check if client has stale definitions or mismatched block hash mode, requiring reconnect refresh.
             // For <= 1.21.50: items are in StartGamePacket only, so both item and block staleness require refresh.
             // For >= 1.21.60: items are refreshed via ItemComponentPacket, so only block staleness requires refresh.
             boolean staleItems = rewriteData.getClientItemDefinitionVersion() < aggregator.getItemDefinitionVersion();
             boolean staleBlocks = rewriteData.getClientBlockDefinitionVersion() < aggregator.getBlockDefinitionVersion();
-            boolean needsRefresh = staleBlocks
+            boolean hashModeMismatch = rewriteData.isClientBlockNetworkIdsHashed() != packet.isBlockNetworkIdsHashed();
+            boolean needsRefresh = staleBlocks || hashModeMismatch
                     || (staleItems && this.player.getProtocol().isBeforeOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_50));
 
             if (needsRefresh) {
@@ -159,10 +161,11 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
                 String publicAddress = config.getProxyPublicAddress();
                 if (publicAddress != null && !publicAddress.isEmpty()) {
                     ServerInfo targetServer = this.connection.getServerInfo();
-                    log.info("[{}] Client definitions are stale (items: {}->{}, blocks: {}->{}), triggering reconnect refresh for transfer to {}",
+                    log.info("[{}] Client definitions are stale (items: {}->{}, blocks: {}->{}, hashMode: {}->{}), triggering reconnect refresh for transfer to {}",
                             this.player.getName(),
                             rewriteData.getClientItemDefinitionVersion(), aggregator.getItemDefinitionVersion(),
                             rewriteData.getClientBlockDefinitionVersion(), aggregator.getBlockDefinitionVersion(),
+                            rewriteData.isClientBlockNetworkIdsHashed(), packet.isBlockNetworkIdsHashed(),
                             targetServer.getServerName());
 
                     // Store the intended target server for after reconnect

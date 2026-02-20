@@ -71,6 +71,9 @@ public class DefinitionAggregator {
     /** Component data from ItemComponentPacket, keyed by item identifier (≤1.21.50 only) */
     private final Map<String, NbtMap> unifiedComponentData = new LinkedHashMap<>();
 
+    /** Per-server blockNetworkIdsHashed flag from StartGamePacket (v582+) */
+    private final Map<String, Boolean> serverBlockNetworkIdsHashed = new ConcurrentHashMap<>();
+
     /** Monotonically increasing version for item definitions, incremented when new items are discovered */
     private volatile int itemDefinitionVersion = 0;
 
@@ -510,6 +513,21 @@ public class DefinitionAggregator {
      */
     public int getBlockDefinitionVersion() {
         return this.blockDefinitionVersion;
+    }
+
+    /**
+     * Register a server's blockNetworkIdsHashed flag from StartGamePacket (v582+).
+     */
+    public void registerBlockNetworkIdsHashed(String serverName, boolean hashed) {
+        this.serverBlockNetworkIdsHashed.put(serverName, hashed);
+    }
+
+    /**
+     * Get a server's blockNetworkIdsHashed flag.
+     * Returns null if the server has not been seen yet.
+     */
+    public Boolean getBlockNetworkIdsHashed(String serverName) {
+        return this.serverBlockNetworkIdsHashed.get(serverName);
     }
 
     /**

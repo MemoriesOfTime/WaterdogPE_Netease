@@ -142,6 +142,7 @@ public class InitialHandler extends AbstractDownstreamHandler {
             List<ItemDefinition> serverItemDefs = packet.getItemDefinitions();
 
             aggregator.registerServer(serverName, serverItemDefs, packet.getBlockProperties());
+            aggregator.registerBlockNetworkIdsHashed(serverName, packet.isBlockNetworkIdsHashed());
 
             // Setup item definitions on upstream helper (client-facing): unified registry
             // For ≤1.21.50, items come from StartGamePacket; for ≥1.21.60, from ItemComponentPacket
@@ -157,9 +158,10 @@ public class InitialHandler extends AbstractDownstreamHandler {
             packet.getBlockProperties().addAll(aggregator.getUnifiedBlockProperties());
             rewriteData.setBlockProperties(packet.getBlockProperties());
 
-            // Record the definition versions the client received
+            // Record the definition versions and hash mode the client received
             rewriteData.setClientItemDefinitionVersion(aggregator.getItemDefinitionVersion());
             rewriteData.setClientBlockDefinitionVersion(aggregator.getBlockDefinitionVersion());
+            rewriteData.setClientBlockNetworkIdsHashed(packet.isBlockNetworkIdsHashed());
 
             // Create mapping and set up downstream translating registry
             ServerIdMapping mapping = aggregator.createMapping(serverName);
@@ -188,6 +190,11 @@ public class InitialHandler extends AbstractDownstreamHandler {
         if (aggregator != null) {
             ServerInfo pendingTarget = aggregator.removePendingRefreshTarget(this.player.getUniqueId());
             if (pendingTarget != null) {
+                Boolean targetHashed = aggregator.getBlockNetworkIdsHashed(pendingTarget.getServerName());
+                if (targetHashed != null && targetHashed != packet.isBlockNetworkIdsHashed()) {
+                    packet.setBlockNetworkIdsHashed(targetHashed);
+                    rewriteData.setClientBlockNetworkIdsHashed(targetHashed);
+                }
                 this.player.getProxy().getScheduler().scheduleDelayed(
                         () -> this.player.connect(pendingTarget), 20);
             }

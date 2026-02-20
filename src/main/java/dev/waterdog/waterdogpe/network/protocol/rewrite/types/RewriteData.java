@@ -108,6 +108,13 @@ public class RewriteData {
     @Getter
     private int clientBlockDefinitionVersion;
 
+    /**
+     * The blockNetworkIdsHashed flag the client received in its StartGamePacket (v582+).
+     * Used to detect hash mode mismatch when switching servers.
+     */
+    @Getter
+    private boolean clientBlockNetworkIdsHashed;
+
     public RewriteData() {
         this.proxyName = ProxyServer.getInstance().getConfiguration().getName();
     }
