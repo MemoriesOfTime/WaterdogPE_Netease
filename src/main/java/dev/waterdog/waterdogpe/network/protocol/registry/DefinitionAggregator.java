@@ -23,6 +23,7 @@ import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.nbt.NbtType;
 import org.cloudburstmc.protocol.bedrock.data.BlockPropertyData;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
+import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleItemDefinition;
 import org.cloudburstmc.protocol.common.SimpleDefinitionRegistry;
 
 import java.util.*;
@@ -66,6 +67,9 @@ public class DefinitionAggregator {
 
     /** Unified entity identifiers: entity id string -> NbtMap entry */
     private final Map<String, NbtMap> unifiedEntityEntries = new LinkedHashMap<>();
+
+    /** Component data from ItemComponentPacket, keyed by item identifier (≤1.21.50 only) */
+    private final Map<String, NbtMap> unifiedComponentData = new LinkedHashMap<>();
 
     /** Monotonically increasing version for item definitions, incremented when new items are discovered */
     private volatile int itemDefinitionVersion = 0;
@@ -196,6 +200,7 @@ public class DefinitionAggregator {
             String id = oldDef.getIdentifier();
             if (!newItemIds.contains(id) && !isDefinitionUsedByAnyServer(id, true)) {
                 this.unifiedItems.remove(id);
+                this.unifiedComponentData.remove(id);
                 removed = true;
             }
         }
@@ -421,6 +426,35 @@ public class DefinitionAggregator {
      */
     public synchronized List<ItemDefinition> getUnifiedItemDefinitions() {
         return new ArrayList<>(this.unifiedItems.values());
+    }
+
+    /**
+     * Register component data from an ItemComponentPacket (≤1.21.50).
+     * First server to register data for an identifier wins.
+     *
+     * @return true if any new component data was registered
+     */
+    public synchronized boolean registerComponentData(List<ItemDefinition> items) {
+        boolean added = false;
+        for (ItemDefinition item : items) {
+            NbtMap data = item.getComponentData();
+            if (data != null && this.unifiedComponentData.putIfAbsent(item.getIdentifier(), data) == null) {
+                added = true;
+            }
+        }
+        return added;
+    }
+
+    /**
+     * Build a list of ItemDefinitions containing all unified component data (≤1.21.50).
+     * runtimeId is set to 0 because the v419 serializer does not write runtimeId.
+     */
+    public synchronized List<ItemDefinition> getUnifiedComponentItems() {
+        List<ItemDefinition> result = new ArrayList<>(this.unifiedComponentData.size());
+        for (Map.Entry<String, NbtMap> entry : this.unifiedComponentData.entrySet()) {
+            result.add(new SimpleItemDefinition(entry.getKey(), 0, null, true, entry.getValue()));
+        }
+        return result;
     }
 
     /**

@@ -88,6 +88,11 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
             ServerIdMapping mapping = aggregator.createMapping(serverName);
             this.player.getRewriteData().setCurrentMapping(mapping);
             setupDownstreamTranslatingRegistry(mapping, serverName, aggregator);
+        } else if (aggregator != null) {
+            // ≤1.21.50 with aggregator: aggregate component data from all servers
+            aggregator.registerComponentData(packet.getItems());
+            packet.getItems().clear();
+            packet.getItems().addAll(aggregator.getUnifiedComponentItems());
         } else if (this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_60)) {
             setItemDefinitions(packet.getItems());
         }
