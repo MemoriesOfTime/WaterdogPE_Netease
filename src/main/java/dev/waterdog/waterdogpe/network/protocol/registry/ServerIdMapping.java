@@ -60,4 +60,13 @@ public class ServerIdMapping {
     public int reverseTranslateItemId(int unifiedItemId) {
         return this.itemUnifiedToServer.getOrDefault(unifiedItemId, unifiedItemId);
     }
+
+    /**
+     * Returns true if the given unified item runtime ID is known to this server's mapping.
+     * For identity mapping, always returns true (all unified IDs are valid server IDs).
+     */
+    public boolean isKnownUnified(int unifiedItemId) {
+        if (this.identity) return true;
+        return this.itemUnifiedToServer.containsKey(unifiedItemId);
+    }
 }

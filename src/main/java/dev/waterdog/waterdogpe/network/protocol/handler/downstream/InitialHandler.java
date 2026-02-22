@@ -153,10 +153,17 @@ public class InitialHandler extends AbstractDownstreamHandler {
                 packet.getItemDefinitions().addAll(aggregator.getUnifiedItemDefinitions());
             }
 
-            // Replace block properties with unified set for client
-            packet.getBlockProperties().clear();
-            packet.getBlockProperties().addAll(aggregator.getUnifiedBlockProperties());
-            rewriteData.setBlockProperties(packet.getBlockProperties());
+            // Hash mode: send unified block list (IDs are deterministic hashes, works across servers).
+            // Sequential mode: keep server's own block list (IDs are positional; the unified list
+            // includes other servers' blocks which shift indices, causing wrong block display).
+            if (packet.isBlockNetworkIdsHashed()) {
+                packet.getBlockProperties().clear();
+                packet.getBlockProperties().addAll(aggregator.getUnifiedBlockProperties());
+                rewriteData.setBlockProperties(packet.getBlockProperties());
+            } else {
+                // Sequential mode: track which server's block list the client received
+                rewriteData.setClientBlockListServer(serverName);
+            }
 
             // Record the definition versions and hash mode the client received
             rewriteData.setClientItemDefinitionVersion(aggregator.getItemDefinitionVersion());
@@ -191,9 +198,34 @@ public class InitialHandler extends AbstractDownstreamHandler {
             ServerInfo pendingTarget = aggregator.removePendingRefreshTarget(this.player.getUniqueId());
             if (pendingTarget != null) {
                 Boolean targetHashed = aggregator.getBlockNetworkIdsHashed(pendingTarget.getServerName());
-                if (targetHashed != null && targetHashed != packet.isBlockNetworkIdsHashed()) {
-                    packet.setBlockNetworkIdsHashed(targetHashed);
-                    rewriteData.setClientBlockNetworkIdsHashed(targetHashed);
+                if (targetHashed != null && !targetHashed) {
+                    // Sequential block ID mode (blockNetworkIdsHashed = false):
+                    // The unified block list causes sequential ID mismatches because each server assigns
+                    // IDs based on its own list ordering. Send the target server's exact block list so
+                    // the client's sequential IDs align with what the target server will send in chunks.
+                    DefinitionAggregator.ServerSnapshot targetSnapshot = aggregator.getServerSnapshot(pendingTarget.getServerName());
+                    if (targetSnapshot != null && !targetSnapshot.getBlockProperties().isEmpty()) {
+                        packet.getBlockProperties().clear();
+                        packet.getBlockProperties().addAll(targetSnapshot.getBlockProperties());
+                        rewriteData.setBlockProperties(packet.getBlockProperties());
+                    }
+                    if (packet.isBlockNetworkIdsHashed()) {
+                        // Client will be told sequential mode, but this (bridge) server uses hash mode.
+                        // Suppress its chunk packets to prevent all blocks displaying wrong while waiting
+                        // for the actual target server connection.
+                        rewriteData.setSuppressChunkTransfer(true);
+                        packet.setBlockNetworkIdsHashed(false);
+                        rewriteData.setClientBlockNetworkIdsHashed(false);
+                    }
+                    // Track which server's block list the client received (for sequential mode stale detection)
+                    rewriteData.setClientBlockListServer(pendingTarget.getServerName());
+                } else {
+                    // Hash mode: block IDs are deterministic hashes, adjust flag if servers differ
+                    if (targetHashed != null && targetHashed != packet.isBlockNetworkIdsHashed()) {
+                        packet.setBlockNetworkIdsHashed(targetHashed);
+                        rewriteData.setClientBlockNetworkIdsHashed(targetHashed);
+                    }
+                    // clientBlockListServer remains null (hash mode uses unified list)
                 }
                 this.player.getProxy().getScheduler().scheduleDelayed(
                         () -> this.player.connect(pendingTarget), 20);

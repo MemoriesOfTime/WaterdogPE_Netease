@@ -115,6 +115,25 @@ public class RewriteData {
     @Getter
     private boolean clientBlockNetworkIdsHashed;
 
+    /**
+     * For sequential block ID mode (blockNetworkIdsHashed = false):
+     * the server name whose block list the client received.
+     * Null in hash mode (client has the unified block list).
+     * Used to detect block staleness when switching servers in sequential mode.
+     */
+    @Getter
+    private String clientBlockListServer;
+
+    /**
+     * When true, LevelChunkPacket from the current downstream is suppressed (not forwarded to client).
+     * Set during pendingTarget mode-conflict reconnect: the client was told sequential mode but the
+     * current server (bridge server) uses hash mode. Suppressing its chunks prevents the client
+     * from interpreting hash block IDs as sequential indices (which would cause all blocks to display wrong).
+     * Cleared when the actual target server's StartGamePacket is processed.
+     */
+    @Getter
+    private boolean suppressChunkTransfer;
+
     public RewriteData() {
         this.proxyName = ProxyServer.getInstance().getConfiguration().getName();
     }

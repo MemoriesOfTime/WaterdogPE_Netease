@@ -95,6 +95,7 @@ public class ReverseItemRewriter implements BedrockPacketHandler {
     /**
      * Creates a new ItemData with the server's runtime ID if translation is needed.
      * Returns null if no translation was necessary.
+     * Returns ItemData.AIR if the item is exclusive to another server (unknown to this one).
      */
     private ItemData reverseRewriteItemData(ItemData item) {
         if (item == null || item.getDefinition() == ItemDefinition.AIR) {
@@ -103,6 +104,12 @@ public class ReverseItemRewriter implements BedrockPacketHandler {
 
         ItemDefinition def = item.getDefinition();
         int unifiedId = def.getRuntimeId();
+
+        // Item is exclusive to another server — replace with AIR to avoid sending a wrong ID
+        if (!this.mapping.isKnownUnified(unifiedId)) {
+            return ItemData.AIR;
+        }
+
         int serverId = this.mapping.reverseTranslateItemId(unifiedId);
         if (serverId == unifiedId) {
             return null;

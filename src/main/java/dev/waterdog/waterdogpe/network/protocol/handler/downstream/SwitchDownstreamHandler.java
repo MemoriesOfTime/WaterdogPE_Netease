@@ -115,6 +115,8 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
     @Override
     public final PacketSignal handle(StartGamePacket packet) {
         RewriteData rewriteData = this.player.getRewriteData();
+        // Clear chunk suppression set during pendingTarget mode-conflict reconnect
+        rewriteData.setSuppressChunkTransfer(false);
         rewriteData.setOriginalEntityId(packet.getRuntimeEntityId());
         rewriteData.setGameRules(packet.getGamerules());
         rewriteData.setSpawnPosition(packet.getPlayerPosition());
@@ -151,7 +153,18 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
             // For <= 1.21.50: items are in StartGamePacket only, so both item and block staleness require refresh.
             // For >= 1.21.60: items are refreshed via ItemComponentPacket, so only block staleness requires refresh.
             boolean staleItems = rewriteData.getClientItemDefinitionVersion() < aggregator.getItemDefinitionVersion();
-            boolean staleBlocks = rewriteData.getClientBlockDefinitionVersion() < aggregator.getBlockDefinitionVersion();
+            boolean staleBlocks;
+            if (!packet.isBlockNetworkIdsHashed()) {
+                // Sequential block ID mode: IDs are positional indices into each server's own block list.
+                // The client must have THIS server's exact block list; a unified list with extra servers'
+                // blocks shifts the indices and causes wrong block display.
+                boolean targetHasCustomBlocks = !packet.getBlockProperties().isEmpty();
+                boolean clientHasTargetBlocks = serverName.equals(rewriteData.getClientBlockListServer());
+                staleBlocks = targetHasCustomBlocks && !clientHasTargetBlocks;
+            } else {
+                // Hash mode: block IDs are deterministic hashes; use version-based staleness detection.
+                staleBlocks = rewriteData.getClientBlockDefinitionVersion() < aggregator.getBlockDefinitionVersion();
+            }
             boolean hashModeMismatch = rewriteData.isClientBlockNetworkIdsHashed() != packet.isBlockNetworkIdsHashed();
             boolean needsRefresh = staleBlocks || hashModeMismatch
                     || (staleItems && this.player.getProtocol().isBeforeOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_50));
@@ -161,8 +174,10 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
                 String publicAddress = config.getProxyPublicAddress();
                 if (publicAddress != null && !publicAddress.isEmpty()) {
                     ServerInfo targetServer = this.connection.getServerInfo();
-                    log.info("[{}] Client definitions are stale (items: {}->{}, blocks: {}->{}, hashMode: {}->{}), triggering reconnect refresh for transfer to {}",
+                    log.info("[{}] Definitions refresh needed (staleItems={}, staleBlocks={}, hashModeMismatch={}) " +
+                                    "[items:{}->{} blocks:{}->{} hashMode:{}->{}], triggering reconnect for transfer to {}",
                             this.player.getName(),
+                            staleItems, staleBlocks, hashModeMismatch,
                             rewriteData.getClientItemDefinitionVersion(), aggregator.getItemDefinitionVersion(),
                             rewriteData.getClientBlockDefinitionVersion(), aggregator.getBlockDefinitionVersion(),
                             rewriteData.isClientBlockNetworkIdsHashed(), packet.isBlockNetworkIdsHashed(),
@@ -184,6 +199,10 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
                     transferPacket.setPort(bindAddress.getPort());
                     this.player.getConnection().sendPacket(transferPacket);
                     return Signals.CANCEL;
+                } else {
+                    log.warn("[{}] Client definitions are stale but proxyPublicAddress is not configured, cannot trigger reconnect refresh. " +
+                                    "Blocks/items may display incorrectly after transfer to {}. Set proxy-public-address in config to enable auto-refresh.",
+                            this.player.getName(), this.connection.getServerInfo().getServerName());
                 }
             }
         }
@@ -299,6 +318,9 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
 
     @Override
     public PacketSignal handle(DisconnectPacket packet) {
+        // Target server disconnected before StartGamePacket — clear suppression so bridge server chunks flow again
+        this.player.getRewriteData().setSuppressChunkTransfer(false);
+
         TransferCallback transferCallback = this.player.getRewriteData().getTransferCallback();
         if (transferCallback != null) {
             // Player was already disconnected from old downstream

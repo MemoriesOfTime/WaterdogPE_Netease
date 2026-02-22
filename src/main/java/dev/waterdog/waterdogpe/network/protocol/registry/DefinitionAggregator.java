@@ -19,13 +19,17 @@ import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import it.unimi.dsi.fastutil.ints.*;
 import lombok.Getter;
 import lombok.extern.log4j.Log4j2;
+import org.cloudburstmc.nbt.NBTOutputStream;
 import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.nbt.NbtType;
+import org.cloudburstmc.nbt.NbtUtils;
 import org.cloudburstmc.protocol.bedrock.data.BlockPropertyData;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleItemDefinition;
 import org.cloudburstmc.protocol.common.SimpleDefinitionRegistry;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -61,6 +65,9 @@ public class DefinitionAggregator {
 
     /** Unified item definitions: identifier -> unified ItemDefinition */
     private final Map<String, ItemDefinition> unifiedItems = new LinkedHashMap<>();
+
+    /** All runtime IDs already allocated in the unified item registry, used to detect and resolve conflicts */
+    private final IntSet usedUnifiedRuntimeIds = new IntOpenHashSet();
 
     /** Unified block properties: block name -> BlockPropertyData */
     private final Map<String, BlockPropertyData> unifiedBlockProperties = new LinkedHashMap<>();
@@ -127,29 +134,61 @@ public class DefinitionAggregator {
         boolean discoveredNewItems = false;
         boolean discoveredNewBlocks = false;
 
-        // Aggregate item definitions
+        // Aggregate item definitions; version increments only on actual new additions
+        // (avoids false-positive stale detection for servers with 0 items in StartGamePacket).
         for (ItemDefinition def : snapshot.itemDefinitions) {
-            if (this.unifiedItems.putIfAbsent(def.getIdentifier(), def) == null) {
-                if (previous != null) {
-                    // New identifier found from a known server (re-registration with new items)
-                    discoveredNewItems = true;
-                    log.debug("New item definition discovered from server {}: {} (runtimeId={})",
-                            serverName, def.getIdentifier(), def.getRuntimeId());
-                }
+            if (this.unifiedItems.containsKey(def.getIdentifier())) {
+                continue; // Already registered, skip
+            }
+            // New identifier — allocate a unified runtimeId, resolving conflicts if needed
+            int unifiedId = def.getRuntimeId();
+            if (!this.usedUnifiedRuntimeIds.add(unifiedId)) {
+                // Conflict: another item already occupies this runtimeId; find a free one
+                unifiedId = this.findNextAvailableRuntimeId();
+                this.usedUnifiedRuntimeIds.add(unifiedId);
+                log.debug("Resolved item runtimeId conflict for {} from server {}: server id {} -> unified id {}",
+                        def.getIdentifier(), serverName, def.getRuntimeId(), unifiedId);
+            }
+            ItemDefinition unifiedDef = (unifiedId == def.getRuntimeId()) ? def
+                    : new SimpleItemDefinition(def.getIdentifier(), unifiedId, def.isComponentBased());
+            this.unifiedItems.put(def.getIdentifier(), unifiedDef);
+            // Increment only when other servers exist (existing clients may need to refresh)
+            if (previous != null || this.serverSnapshots.size() > 1) {
+                discoveredNewItems = true;
+                log.debug("New item definition discovered from server {}: {} (unifiedId={})",
+                        serverName, def.getIdentifier(), unifiedId);
+            }
+        }
+
+        // Track this server's previous block names to distinguish self-update from cross-server conflict.
+        Set<String> previousServerBlockNames = Collections.emptySet();
+        if (previous != null && !previous.getBlockProperties().isEmpty()) {
+            previousServerBlockNames = new HashSet<>(previous.getBlockProperties().size());
+            for (BlockPropertyData bp : previous.getBlockProperties()) {
+                previousServerBlockNames.add(bp.getName());
             }
         }
 
         // Aggregate block properties
         for (BlockPropertyData bp : snapshot.blockProperties) {
-            BlockPropertyData existing = this.unifiedBlockProperties.putIfAbsent(bp.getName(), bp);
+            BlockPropertyData existing = this.unifiedBlockProperties.get(bp.getName());
             if (existing == null) {
-                if (previous != null) {
+                this.unifiedBlockProperties.put(bp.getName(), bp);
+                if (previous != null || this.serverSnapshots.size() > 1) {
                     discoveredNewBlocks = true;
                     log.debug("New block property discovered from server {}: {}", serverName, bp.getName());
                 }
-            } else if (!existing.getProperties().equals(bp.getProperties())) {
-                log.warn("Block property conflict for '{}': server {} has different properties, using first registered version",
-                        bp.getName(), serverName);
+            } else if (!blockPropertiesEqual(existing.getProperties(), bp.getProperties())) {
+                if (previousServerBlockNames.contains(bp.getName())) {
+                    // Same server update — refresh unified registry
+                    this.unifiedBlockProperties.put(bp.getName(), bp);
+                    discoveredNewBlocks = true;
+                    log.debug("Block property '{}' updated by server {} (properties changed)", bp.getName(), serverName);
+                } else {
+                    // Different server registered this block first — genuine cross-server conflict
+                    log.warn("Block property conflict for '{}': server {} has different properties, using first registered version",
+                            bp.getName(), serverName);
+                }
             }
         }
 
@@ -157,12 +196,6 @@ public class DefinitionAggregator {
         boolean removedDefinitions = false;
         if (previous != null) {
             removedDefinitions = cleanupRemovedDefinitions(previous, snapshot);
-        }
-
-        // Mark new definitions if this is a newly discovered server
-        if (previous == null && this.serverSnapshots.size() > 1) {
-            discoveredNewItems = true;
-            discoveredNewBlocks = true;
         }
 
         // Increment versions independently (only for NEW definitions, not removals)
@@ -202,7 +235,10 @@ public class DefinitionAggregator {
         for (ItemDefinition oldDef : oldSnapshot.itemDefinitions) {
             String id = oldDef.getIdentifier();
             if (!newItemIds.contains(id) && !isDefinitionUsedByAnyServer(id, true)) {
-                this.unifiedItems.remove(id);
+                ItemDefinition removedDef = this.unifiedItems.remove(id);
+                if (removedDef != null) {
+                    this.usedUnifiedRuntimeIds.remove(removedDef.getRuntimeId());
+                }
                 this.unifiedComponentData.remove(id);
                 removed = true;
             }
@@ -408,18 +444,47 @@ public class DefinitionAggregator {
     }
 
     /**
+     * Compare block property NbtMaps, using serialized bytes as fallback
+     * to handle Boolean/Byte type differences after cache round-trip.
+     */
+    private static boolean blockPropertiesEqual(NbtMap a, NbtMap b) {
+        if (a.equals(b)) return true;
+        try {
+            ByteArrayOutputStream baosA = new ByteArrayOutputStream();
+            try (NBTOutputStream outA = NbtUtils.createWriterLE(baosA)) {
+                outA.writeTag(a);
+            }
+            ByteArrayOutputStream baosB = new ByteArrayOutputStream();
+            try (NBTOutputStream outB = NbtUtils.createWriterLE(baosB)) {
+                outB.writeTag(b);
+            }
+            return Arrays.equals(baosA.toByteArray(), baosB.toByteArray());
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Find the next available (unused) unified item runtime ID.
+     * Must be called within a synchronized context.
+     */
+    private int findNextAvailableRuntimeId() {
+        int max = 0;
+        for (int id : this.usedUnifiedRuntimeIds) {
+            if (id > max) max = id;
+        }
+        return max + 1;
+    }
+
+    /**
      * Build a SimpleDefinitionRegistry containing all unified item definitions.
      * Used for the upstream (client-facing) codec helper.
+     * Runtime ID conflicts are resolved at registration time, so this registry is always conflict-free.
      */
     public synchronized SimpleDefinitionRegistry<ItemDefinition> buildUnifiedItemRegistry() {
         SimpleDefinitionRegistry.Builder<ItemDefinition> builder = SimpleDefinitionRegistry.builder();
-        IntSet runtimeIds = new IntOpenHashSet();
         for (ItemDefinition def : this.unifiedItems.values()) {
-            if (runtimeIds.add(def.getRuntimeId())) {
-                builder.add(def);
-            } else {
-                log.warn("Skipping item with duplicate runtime ID {}: {}", def.getRuntimeId(), def.getIdentifier());
-            }
+            builder.add(def);
         }
         return builder.build();
     }
@@ -478,6 +543,14 @@ public class DefinitionAggregator {
         return NbtMap.builder()
                 .putList("idlist", NbtType.COMPOUND, new ArrayList<>(this.unifiedEntityEntries.values()))
                 .build();
+    }
+
+    /**
+     * Get the ServerSnapshot for a specific server.
+     * Returns null if the server has not been registered.
+     */
+    public synchronized ServerSnapshot getServerSnapshot(String serverName) {
+        return this.serverSnapshots.get(serverName);
     }
 
     /**

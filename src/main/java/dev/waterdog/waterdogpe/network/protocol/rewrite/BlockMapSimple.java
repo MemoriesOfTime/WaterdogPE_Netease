@@ -15,8 +15,9 @@
 
 package dev.waterdog.waterdogpe.network.protocol.rewrite;
 
-import org.cloudburstmc.protocol.bedrock.packet.*;
+import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
+import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.common.PacketSignal;
 
 public class BlockMapSimple extends BlockMap {
@@ -32,6 +33,9 @@ public class BlockMapSimple extends BlockMap {
 
     @Override
     public PacketSignal handle(LevelChunkPacket packet) {
+        if (this.player.getRewriteData().isSuppressChunkTransfer()) {
+            return Signals.CANCEL;
+        }
         return PacketSignal.UNHANDLED;
     }
 
