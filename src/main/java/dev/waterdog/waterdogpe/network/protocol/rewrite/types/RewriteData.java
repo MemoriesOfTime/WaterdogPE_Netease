@@ -87,50 +87,27 @@ public class RewriteData {
     @Getter
     private BedrockCodecHelper codecHelper;
 
-    /**
-     * Current item ID mapping between the connected downstream server and the unified registry.
-     * Null when registry aggregation is disabled.
-     */
+    /** Item ID mapping for the current downstream server. Null when aggregation is disabled. */
     @Getter
     private ServerIdMapping currentMapping;
 
-    /**
-     * The item definition version the client received during initial connect.
-     * Used to detect stale item definitions for <= 1.21.50 clients.
-     */
+    /** Item definition version the client received. Used to detect staleness (≤1.21.50). */
     @Getter
     private int clientItemDefinitionVersion;
 
-    /**
-     * The block definition version the client received during initial connect.
-     * Used to detect stale block definitions for all clients.
-     */
+    /** Block definition version the client received. Used to detect staleness. */
     @Getter
     private int clientBlockDefinitionVersion;
 
-    /**
-     * The blockNetworkIdsHashed flag the client received in its StartGamePacket (v582+).
-     * Used to detect hash mode mismatch when switching servers.
-     */
+    /** The blockNetworkIdsHashed flag from the client's StartGamePacket. */
     @Getter
     private boolean clientBlockNetworkIdsHashed;
 
-    /**
-     * For sequential block ID mode (blockNetworkIdsHashed = false):
-     * the server name whose block list the client received.
-     * Null in hash mode (client has the unified block list).
-     * Used to detect block staleness when switching servers in sequential mode.
-     */
+    /** Server name whose block list the client received (sequential mode only; null in hash mode). */
     @Getter
     private String clientBlockListServer;
 
-    /**
-     * When true, LevelChunkPacket from the current downstream is suppressed (not forwarded to client).
-     * Set during pendingTarget mode-conflict reconnect: the client was told sequential mode but the
-     * current server (bridge server) uses hash mode. Suppressing its chunks prevents the client
-     * from interpreting hash block IDs as sequential indices (which would cause all blocks to display wrong).
-     * Cleared when the actual target server's StartGamePacket is processed.
-     */
+    /** When true, LevelChunkPackets are suppressed during hash/sequential mode-conflict reconnect. */
     @Getter
     private boolean suppressChunkTransfer;
 

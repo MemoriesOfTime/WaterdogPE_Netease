@@ -434,9 +434,10 @@ public class ProxyServer {
     }
 
     /**
-     * 获取指定协议版本的 DefinitionAggregator。
-     * 网易客户端和国际版客户端使用独立的聚合器。
-     * 返回 null 表示 registry aggregation 未启用。
+     * Get the DefinitionAggregator for the given protocol version.
+     * NetEase and international clients use separate aggregators.
+     *
+     * @return null if registry aggregation is not enabled
      */
     public DefinitionAggregator getDefinitionAggregator(ProtocolVersion version, boolean netease) {
         if (this.definitionAggregators == null) {

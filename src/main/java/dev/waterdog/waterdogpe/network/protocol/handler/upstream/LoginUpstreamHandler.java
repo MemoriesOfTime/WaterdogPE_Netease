@@ -106,10 +106,8 @@ public class LoginUpstreamHandler implements BedrockPacketHandler {
         boolean neteaseSupport = this.proxy.getConfiguration().isNeteaseClientSupport();
         boolean isNetEaseClient = rakVersion == 8;
 
-        // Detect NetEase client by RakNet version 8
         if (isNetEaseClient) {
             if (!neteaseSupport) {
-                // NetEase client detected but support is disabled
                 this.proxy.getLogger().debug("[{}] <-> Rejected NetEase client connection - NetEase support is disabled", this.session.getSocketAddress());
                 this.session.disconnect("NetEase client support is disabled");
                 return PacketSignal.HANDLED;
@@ -118,14 +116,12 @@ public class LoginUpstreamHandler implements BedrockPacketHandler {
             this.netEaseClient = true;
             this.session.getPeer().setNetEaseClient(true);
 
-            // Find NetEase codec for the protocol version
             BedrockCodec netEaseCodec = protocol.getNetEaseCodec();
             if (netEaseCodec == null) {
                 this.session.disconnect("Unsupported NetEase client version");
                 return PacketSignal.HANDLED;
             }
 
-            // Use NetEase codec
             this.session.setCodec(netEaseCodec);
         } else {
             this.session.setCodec(protocol.getCodec());

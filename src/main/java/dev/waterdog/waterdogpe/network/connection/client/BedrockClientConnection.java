@@ -91,11 +91,10 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
                     try {
                         this.packetHandler.handlePacket(packet.getPacket());
                     } catch (Exception e) {
-                        // 单个数据包错误不应导致连接断开
-                        log.warn("数据包处理错误: {} - 包类型: {}",
-                            e.getMessage(), packet.getPacket().getClass().getSimpleName());
+                        log.warn("Error handling packet {}: {}",
+                            packet.getPacket().getClass().getSimpleName(), e.getMessage());
                         if (log.isDebugEnabled()) {
-                            log.debug("数据包处理详细错误信息:", e);
+                            log.debug("Packet handling error details:", e);
                         }
                     }
                 }
@@ -103,7 +102,7 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
                 log.warn("Received unhandled packets for {}", this.getSocketAddress());
             }
         } catch (Exception e) {
-            log.error("批处理包处理发生严重错误: {} - {}", e.getClass().getSimpleName(), e.getMessage(), e);
+            log.error("Fatal error processing batch: {} - {}", e.getClass().getSimpleName(), e.getMessage(), e);
         }
     }
 

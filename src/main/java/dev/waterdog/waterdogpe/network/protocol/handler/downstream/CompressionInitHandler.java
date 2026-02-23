@@ -21,7 +21,9 @@ import dev.waterdog.waterdogpe.network.connection.codec.initializer.ProxiedSessi
 import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
-import org.cloudburstmc.protocol.bedrock.packet.*;
+import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
+import org.cloudburstmc.protocol.bedrock.packet.NetworkSettingsPacket;
+import org.cloudburstmc.protocol.bedrock.packet.RequestNetworkSettingsPacket;
 import org.cloudburstmc.protocol.common.PacketSignal;
 
 public class CompressionInitHandler extends AbstractDownstreamHandler {
@@ -45,8 +47,7 @@ public class CompressionInitHandler extends AbstractDownstreamHandler {
     @Override
     public PacketSignal handle(NetworkSettingsPacket packet) {
         if (this.player.isNetEaseClient()) {
-            // NetEase clients use raw deflate format, downstream server will also use raw deflate
-            // because it detects RakNet v8 from the proxy connection
+            // NetEase clients use raw deflate format
             this.connection.setCompressionStrategy(ProxiedSessionInitializer.NET_EASE_STRATEGY);
         } else {
             CompressionType compression = CompressionType.fromBedrockCompression(packet.getCompressionAlgorithm());

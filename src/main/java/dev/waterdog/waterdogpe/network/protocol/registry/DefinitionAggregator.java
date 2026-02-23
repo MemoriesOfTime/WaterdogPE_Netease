@@ -26,6 +26,7 @@ import org.cloudburstmc.nbt.NbtUtils;
 import org.cloudburstmc.protocol.bedrock.data.BlockPropertyData;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleItemDefinition;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ItemVersion;
 import org.cloudburstmc.protocol.common.SimpleDefinitionRegistry;
 
 import java.io.ByteArrayOutputStream;
@@ -528,7 +529,7 @@ public class DefinitionAggregator {
     public synchronized List<ItemDefinition> getUnifiedComponentItems() {
         List<ItemDefinition> result = new ArrayList<>(this.unifiedComponentData.size());
         for (Map.Entry<String, NbtMap> entry : this.unifiedComponentData.entrySet()) {
-            result.add(new SimpleItemDefinition(entry.getKey(), 0, null, true, entry.getValue()));
+            result.add(new SimpleItemDefinition(entry.getKey(), 0, ItemVersion.LEGACY, true, entry.getValue()));
         }
         return result;
     }

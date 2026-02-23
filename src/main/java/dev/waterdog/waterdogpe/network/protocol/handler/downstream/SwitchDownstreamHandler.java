@@ -45,9 +45,7 @@ import javax.crypto.SecretKey;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.security.interfaces.ECPublicKey;
-import java.util.Base64;
-import java.util.Collection;
-import java.util.UUID;
+import java.util.*;
 
 import static dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils.*;
 
@@ -105,7 +103,7 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
 
     @Override
     public PacketSignal handle(BiomeDefinitionListPacket packet) {
-        // 尝试解决网易客户端卡顿问题
+        // Skip BiomeDefinitionListPacket for NetEase clients to avoid lag
         if (this.player.isNetEaseClient()) {
             return Signals.CANCEL;
         }
@@ -133,12 +131,11 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
         DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator(this.player.getProtocol(), this.player.isNetEaseClient());
         if (aggregator != null) {
             String serverName = this.connection.getServerInfo().getServerName();
-            java.util.List<ItemDefinition> serverItemDefs;
+            List<ItemDefinition> serverItemDefs;
             if (this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_60)) {
-                // ≥1.21.60: item definitions are NOT in StartGamePacket (they arrive via ItemComponentPacket).
-                // Preserve the existing snapshot's items to avoid incorrectly cleaning up this server's custom items.
+                // ≥1.21.60: items arrive via ItemComponentPacket, preserve existing snapshot
                 DefinitionAggregator.ServerSnapshot existing = aggregator.getServerSnapshot(serverName);
-                serverItemDefs = existing != null ? existing.getItemDefinitions() : java.util.Collections.emptyList();
+                serverItemDefs = existing != null ? existing.getItemDefinitions() : Collections.emptyList();
             } else {
                 serverItemDefs = packet.getItemDefinitions();
             }
@@ -157,20 +154,16 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
             // Reset so the new server can send ItemComponentPacket (for ≥1.21.60)
             this.player.setAcceptItemComponentPacket(true);
 
-            // Check if client has stale definitions or mismatched block hash mode, requiring reconnect refresh.
-            // For <= 1.21.50: items are in StartGamePacket only, so both item and block staleness require refresh.
-            // For >= 1.21.60: items are refreshed via ItemComponentPacket, so only block staleness requires refresh.
+            // Check if client needs reconnect refresh (stale definitions or hash mode mismatch)
             boolean staleItems = rewriteData.getClientItemDefinitionVersion() < aggregator.getItemDefinitionVersion();
             boolean staleBlocks;
             if (!packet.isBlockNetworkIdsHashed()) {
-                // Sequential block ID mode: IDs are positional indices into each server's own block list.
-                // The client must have THIS server's exact block list; a unified list with extra servers'
-                // blocks shifts the indices and causes wrong block display.
+                // Sequential mode: client must have this server's exact block list
                 boolean targetHasCustomBlocks = !packet.getBlockProperties().isEmpty();
                 boolean clientHasTargetBlocks = serverName.equals(rewriteData.getClientBlockListServer());
                 staleBlocks = targetHasCustomBlocks && !clientHasTargetBlocks;
             } else {
-                // Hash mode: block IDs are deterministic hashes; use version-based staleness detection.
+                // Hash mode: use version-based staleness detection
                 staleBlocks = rewriteData.getClientBlockDefinitionVersion() < aggregator.getBlockDefinitionVersion();
             }
             boolean hashModeMismatch = rewriteData.isClientBlockNetworkIdsHashed() != packet.isBlockNetworkIdsHashed();
@@ -191,16 +184,11 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
                             rewriteData.isClientBlockNetworkIdsHashed(), packet.isBlockNetworkIdsHashed(),
                             targetServer.getServerName());
 
-                    // Store the intended target server for after reconnect
                     aggregator.addPendingRefreshTarget(this.player.getUniqueId(), targetServer);
-
-                    // Send a hint message to the client
                     this.player.sendMessage("§eRefreshing game data, please wait...");
-
-                    // Disconnect the new downstream connection (we won't use it)
                     this.connection.disconnect();
 
-                    // Send TransferPacket to make the client reconnect to proxy
+                    // Transfer client back to proxy for reconnect
                     InetSocketAddress bindAddress = config.getBindAddress();
                     TransferPacket transferPacket = new TransferPacket();
                     transferPacket.setAddress(publicAddress);
@@ -208,8 +196,8 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
                     this.player.getConnection().sendPacket(transferPacket);
                     return Signals.CANCEL;
                 } else {
-                    log.warn("[{}] Client definitions are stale but proxyPublicAddress is not configured, cannot trigger reconnect refresh. " +
-                                    "Blocks/items may display incorrectly after transfer to {}. Set proxy-public-address in config to enable auto-refresh.",
+                    log.warn("[{}] Stale definitions but proxyPublicAddress not configured, cannot refresh. " +
+                                    "Items/blocks may display incorrectly on {}",
                             this.player.getName(), this.connection.getServerInfo().getServerName());
                 }
             }

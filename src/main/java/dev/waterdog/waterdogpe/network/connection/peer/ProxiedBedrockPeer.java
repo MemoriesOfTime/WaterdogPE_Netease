@@ -73,7 +73,7 @@ public class ProxiedBedrockPeer extends BedrockPeer {
                         BedrockServerSession session = this.getSession(wrapper.getTargetSubClientId());
                         session.onPacket(wrapper);
                     } catch (Exception e) {
-                        log.error("[{}] 分发数据包时发生异常，子客户端ID: {}",
+                        log.error("[{}] Exception dispatching packet to subClientId {}",
                             getSocketAddress(), wrapper.getTargetSubClientId(), e);
                     }
                 }
@@ -81,7 +81,7 @@ public class ProxiedBedrockPeer extends BedrockPeer {
                 this.firstSession.onBedrockBatch(batch);
             }
         } catch (Exception e) {
-            log.error("[{}] 处理BedrockBatch时发生异常", getSocketAddress(), e);
+            log.error("[{}] Exception processing BedrockBatch", getSocketAddress(), e);
             throw e;
         }
     }

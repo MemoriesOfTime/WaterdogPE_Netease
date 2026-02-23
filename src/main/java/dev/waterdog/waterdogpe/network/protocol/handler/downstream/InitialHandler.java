@@ -108,7 +108,7 @@ public class InitialHandler extends AbstractDownstreamHandler {
         RewriteData rewriteData = this.player.getRewriteData();
         rewriteData.setOriginalEntityId(packet.getRuntimeEntityId());
         if (this.player.isNetEaseClient()) {
-            // 网易客户端直接使用 RuntimeEntityId，保持 playerId = uid
+            // NetEase clients use RuntimeEntityId directly, keeping playerId = uid
             rewriteData.setEntityId(packet.getRuntimeEntityId());
         } else {
             rewriteData.setEntityId(ThreadLocalRandom.current().nextInt(10000, 15000));
@@ -144,8 +144,7 @@ public class InitialHandler extends AbstractDownstreamHandler {
             aggregator.registerServer(serverName, serverItemDefs, packet.getBlockProperties());
             aggregator.registerBlockNetworkIdsHashed(serverName, packet.isBlockNetworkIdsHashed());
 
-            // Setup item definitions on upstream helper (client-facing): unified registry
-            // For ≤1.21.50, items come from StartGamePacket; for ≥1.21.60, from ItemComponentPacket
+            // ≤1.21.50: items in StartGamePacket; ≥1.21.60: deferred to ItemComponentPacket
             if (this.player.getProtocol().isBeforeOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_50)) {
                 upstreamHelper.setItemDefinitions(aggregator.buildUnifiedItemRegistry());
                 // Replace packet's item definitions with unified set for client
@@ -153,9 +152,8 @@ public class InitialHandler extends AbstractDownstreamHandler {
                 packet.getItemDefinitions().addAll(aggregator.getUnifiedItemDefinitions());
             }
 
-            // Hash mode: send unified block list (IDs are deterministic hashes, works across servers).
-            // Sequential mode: keep server's own block list (IDs are positional; the unified list
-            // includes other servers' blocks which shift indices, causing wrong block display).
+            // Hash mode: unified block list is safe. Sequential mode: keep server's own list
+            // (unified list shifts positional indices, causing wrong block display).
             if (packet.isBlockNetworkIdsHashed()) {
                 packet.getBlockProperties().clear();
                 packet.getBlockProperties().addAll(aggregator.getUnifiedBlockProperties());
@@ -199,10 +197,7 @@ public class InitialHandler extends AbstractDownstreamHandler {
             if (pendingTarget != null) {
                 Boolean targetHashed = aggregator.getBlockNetworkIdsHashed(pendingTarget.getServerName());
                 if (targetHashed != null && !targetHashed) {
-                    // Sequential block ID mode (blockNetworkIdsHashed = false):
-                    // The unified block list causes sequential ID mismatches because each server assigns
-                    // IDs based on its own list ordering. Send the target server's exact block list so
-                    // the client's sequential IDs align with what the target server will send in chunks.
+                    // Sequential mode: send target server's exact block list so positional IDs match.
                     DefinitionAggregator.ServerSnapshot targetSnapshot = aggregator.getServerSnapshot(pendingTarget.getServerName());
                     if (targetSnapshot != null && !targetSnapshot.getBlockProperties().isEmpty()) {
                         packet.getBlockProperties().clear();
@@ -210,22 +205,18 @@ public class InitialHandler extends AbstractDownstreamHandler {
                         rewriteData.setBlockProperties(packet.getBlockProperties());
                     }
                     if (packet.isBlockNetworkIdsHashed()) {
-                        // Client will be told sequential mode, but this (bridge) server uses hash mode.
-                        // Suppress its chunk packets to prevent all blocks displaying wrong while waiting
-                        // for the actual target server connection.
+                        // Bridge server uses hash mode but client needs sequential; suppress chunks
                         rewriteData.setSuppressChunkTransfer(true);
                         packet.setBlockNetworkIdsHashed(false);
                         rewriteData.setClientBlockNetworkIdsHashed(false);
                     }
-                    // Track which server's block list the client received (for sequential mode stale detection)
                     rewriteData.setClientBlockListServer(pendingTarget.getServerName());
                 } else {
-                    // Hash mode: block IDs are deterministic hashes, adjust flag if servers differ
+                    // Hash mode: adjust flag if servers differ
                     if (targetHashed != null && targetHashed != packet.isBlockNetworkIdsHashed()) {
                         packet.setBlockNetworkIdsHashed(targetHashed);
                         rewriteData.setClientBlockNetworkIdsHashed(targetHashed);
                     }
-                    // clientBlockListServer remains null (hash mode uses unified list)
                 }
                 this.player.getProxy().getScheduler().scheduleDelayed(
                         () -> this.player.connect(pendingTarget), 20);

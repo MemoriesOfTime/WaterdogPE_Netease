@@ -28,6 +28,7 @@ import dev.waterdog.waterdogpe.network.protocol.rewrite.RewriteMaps;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
+import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
 import org.cloudburstmc.protocol.bedrock.data.camera.CameraPreset;
@@ -97,7 +98,6 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
             setItemDefinitions(packet.getItems());
         }
 
-        // Aggregator paths modified packet items; force re-encoding to send unified definitions to client
         return aggregator != null ? PacketSignal.HANDLED : PacketSignal.UNHANDLED;
     }
 
@@ -194,7 +194,7 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         aggregator.registerEntityIdentifiers(serverName, packet.getIdentifiers());
 
         // Replace with merged entity identifiers
-        org.cloudburstmc.nbt.NbtMap merged = aggregator.getMergedEntityIdentifiers();
+        NbtMap merged = aggregator.getMergedEntityIdentifiers();
         if (merged != null) {
             packet.setIdentifiers(merged);
             return PacketSignal.HANDLED;
@@ -208,7 +208,7 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         if (mapping == null || mapping.isIdentity()) {
             return PacketSignal.UNHANDLED;
         }
-        // ItemData decoded via TranslatingItemRegistry (server→unified); force re-encoding to send unified IDs to client.
+        // Force re-encoding with unified item IDs
         return PacketSignal.HANDLED;
     }
 
@@ -218,7 +218,7 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         if (mapping == null || mapping.isIdentity()) {
             return PacketSignal.UNHANDLED;
         }
-        // ItemData decoded via TranslatingItemRegistry (server→unified); force re-encoding to send unified IDs to client.
+        // Force re-encoding with unified item IDs
         return PacketSignal.HANDLED;
     }
 
