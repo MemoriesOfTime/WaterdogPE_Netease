@@ -26,6 +26,7 @@ import org.cloudburstmc.nbt.NbtUtils;
 import org.cloudburstmc.protocol.bedrock.data.BlockPropertyData;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleItemDefinition;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ItemVersion;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -120,6 +121,8 @@ public class DefinitionCache {
             item.identifier = def.getIdentifier();
             item.runtimeId = def.getRuntimeId();
             item.componentBased = def.isComponentBased();
+            item.version = def.getVersion() != null ? def.getVersion().name() : null;
+            item.componentData = nbtToBase64(def.getComponentData());
             cached.items.add(item);
         }
 
@@ -138,7 +141,9 @@ public class DefinitionCache {
         List<ItemDefinition> items = new ArrayList<>();
         if (cached.items != null) {
             for (CachedItemDef item : cached.items) {
-                items.add(new SimpleItemDefinition(item.identifier, item.runtimeId, item.componentBased));
+                ItemVersion version = item.version != null ? ItemVersion.valueOf(item.version) : ItemVersion.LEGACY;
+                NbtMap componentData = item.componentData != null ? base64ToNbt(item.componentData) : null;
+                items.add(new SimpleItemDefinition(item.identifier, item.runtimeId, version, item.componentBased, componentData));
             }
         }
 
@@ -204,6 +209,8 @@ public class DefinitionCache {
         String identifier;
         int runtimeId;
         boolean componentBased;
+        String version; // ItemVersion enum name
+        String componentData; // base64 encoded NBT
     }
 
     private static class CachedBlockProperty {

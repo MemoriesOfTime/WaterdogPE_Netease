@@ -33,8 +33,6 @@ import org.cloudburstmc.protocol.common.DefinitionRegistry;
  */
 public class TranslatingItemRegistry implements DefinitionRegistry<ItemDefinition> {
 
-    private static final ItemDefinition UNKNOWN = new SimpleItemDefinition("unknown", 0, false);
-
     private final Int2ObjectMap<ItemDefinition> mapping;
 
     /**

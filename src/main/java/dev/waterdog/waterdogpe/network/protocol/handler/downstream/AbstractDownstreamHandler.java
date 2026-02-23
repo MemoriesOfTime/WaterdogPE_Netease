@@ -97,7 +97,8 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
             setItemDefinitions(packet.getItems());
         }
 
-        return PacketSignal.UNHANDLED;
+        // Aggregator paths modified packet items; force re-encoding to send unified definitions to client
+        return aggregator != null ? PacketSignal.HANDLED : PacketSignal.UNHANDLED;
     }
 
     @Override
@@ -203,15 +204,31 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
 
     @Override
     public PacketSignal handle(CreativeContentPacket packet) {
-        DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator(this.player.getProtocol(), this.player.isNetEaseClient());
-        if (aggregator == null) {
+        ServerIdMapping mapping = this.player.getRewriteData().getCurrentMapping();
+        if (mapping == null || mapping.isIdentity()) {
             return PacketSignal.UNHANDLED;
         }
+        // ItemData decoded via TranslatingItemRegistry (server→unified); force re-encoding to send unified IDs to client.
+        return PacketSignal.HANDLED;
+    }
 
-        // Creative content ItemData is automatically translated by the downstream TranslatingItemRegistry
-        // during deserialization, so the ItemData already contains unified IDs at this point.
-        // No additional translation is needed here.
-        return PacketSignal.UNHANDLED;
+    @Override
+    public PacketSignal handle(InventoryContentPacket packet) {
+        ServerIdMapping mapping = this.player.getRewriteData().getCurrentMapping();
+        if (mapping == null || mapping.isIdentity()) {
+            return PacketSignal.UNHANDLED;
+        }
+        // ItemData decoded via TranslatingItemRegistry (server→unified); force re-encoding to send unified IDs to client.
+        return PacketSignal.HANDLED;
+    }
+
+    @Override
+    public PacketSignal handle(InventorySlotPacket packet) {
+        ServerIdMapping mapping = this.player.getRewriteData().getCurrentMapping();
+        if (mapping == null || mapping.isIdentity()) {
+            return PacketSignal.UNHANDLED;
+        }
+        return PacketSignal.HANDLED;
     }
 
     @Override

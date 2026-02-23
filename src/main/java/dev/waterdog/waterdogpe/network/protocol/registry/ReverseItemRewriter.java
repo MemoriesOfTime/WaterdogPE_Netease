@@ -98,7 +98,7 @@ public class ReverseItemRewriter implements BedrockPacketHandler {
      * Returns ItemData.AIR if the item is exclusive to another server (unknown to this one).
      */
     private ItemData reverseRewriteItemData(ItemData item) {
-        if (item == null || item.getDefinition() == ItemDefinition.AIR) {
+        if (item == null || item.getDefinition() == null || item.getDefinition() == ItemDefinition.AIR) {
             return null;
         }
 

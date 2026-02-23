@@ -138,7 +138,15 @@ public class DefinitionAggregator {
         // (avoids false-positive stale detection for servers with 0 items in StartGamePacket).
         for (ItemDefinition def : snapshot.itemDefinitions) {
             if (this.unifiedItems.containsKey(def.getIdentifier())) {
-                continue; // Already registered, skip
+                // Refresh if existing definition lacks componentData but new one has it
+                // (happens when cache-loaded definitions are replaced by fresh server data)
+                ItemDefinition existing = this.unifiedItems.get(def.getIdentifier());
+                if (existing.getComponentData() == null && def.getComponentData() != null) {
+                    this.unifiedItems.put(def.getIdentifier(), new SimpleItemDefinition(
+                            existing.getIdentifier(), existing.getRuntimeId(),
+                            def.getVersion(), existing.isComponentBased(), def.getComponentData()));
+                }
+                continue;
             }
             // New identifier — allocate a unified runtimeId, resolving conflicts if needed
             int unifiedId = def.getRuntimeId();
@@ -150,7 +158,7 @@ public class DefinitionAggregator {
                         def.getIdentifier(), serverName, def.getRuntimeId(), unifiedId);
             }
             ItemDefinition unifiedDef = (unifiedId == def.getRuntimeId()) ? def
-                    : new SimpleItemDefinition(def.getIdentifier(), unifiedId, def.isComponentBased());
+                    : new SimpleItemDefinition(def.getIdentifier(), unifiedId, def.getVersion(), def.isComponentBased(), def.getComponentData());
             this.unifiedItems.put(def.getIdentifier(), unifiedDef);
             // Increment only when other servers exist (existing clients may need to refresh)
             if (previous != null || this.serverSnapshots.size() > 1) {

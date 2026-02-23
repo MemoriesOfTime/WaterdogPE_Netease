@@ -133,7 +133,15 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
         DefinitionAggregator aggregator = this.player.getProxy().getDefinitionAggregator(this.player.getProtocol(), this.player.isNetEaseClient());
         if (aggregator != null) {
             String serverName = this.connection.getServerInfo().getServerName();
-            java.util.List<ItemDefinition> serverItemDefs = packet.getItemDefinitions();
+            java.util.List<ItemDefinition> serverItemDefs;
+            if (this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_60)) {
+                // ≥1.21.60: item definitions are NOT in StartGamePacket (they arrive via ItemComponentPacket).
+                // Preserve the existing snapshot's items to avoid incorrectly cleaning up this server's custom items.
+                DefinitionAggregator.ServerSnapshot existing = aggregator.getServerSnapshot(serverName);
+                serverItemDefs = existing != null ? existing.getItemDefinitions() : java.util.Collections.emptyList();
+            } else {
+                serverItemDefs = packet.getItemDefinitions();
+            }
             aggregator.registerServer(serverName, serverItemDefs, packet.getBlockProperties());
             aggregator.registerBlockNetworkIdsHashed(serverName, packet.isBlockNetworkIdsHashed());
 
