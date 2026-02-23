@@ -51,7 +51,7 @@ public class ProxiedClientSessionInitializer extends ChannelInitializer<Channel>
     }
 
     @Override
-    protected void initChannel(Channel channel) throws Exception {
+    protected void initChannel(Channel channel) {
         boolean netEaseClient = this.player.isNetEaseClient();
         int rakVersion = netEaseClient
                 ? this.player.getProtocol().getNetEaseRaknetVersion()

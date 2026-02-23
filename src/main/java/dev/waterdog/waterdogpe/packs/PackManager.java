@@ -16,6 +16,7 @@
 package dev.waterdog.waterdogpe.packs;
 
 import io.netty.buffer.Unpooled;
+import lombok.Getter;
 import org.cloudburstmc.protocol.bedrock.data.ResourcePackType;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import dev.waterdog.waterdogpe.ProxyServer;
@@ -41,10 +42,14 @@ public class PackManager {
     private static final ResourcePackStackPacket.Entry EDU_PACK = new ResourcePackStackPacket.Entry("0fba4063-dba1-4281-9b89-ff9390653530", "1.0.0", "");
 
     private final ProxyServer proxy;
+    @Getter
     private final Map<UUID, ResourcePack> packs = new HashMap<>();
+    @Getter
     private final Map<String, ResourcePack> packsByIdVer = new HashMap<>();
 
+    @Getter
     private final ResourcePacksInfoPacket packsInfoPacket = new ResourcePacksInfoPacket();
+    @Getter
     private final ResourcePackStackPacket stackPacket = new ResourcePackStackPacket();
 
     public PackManager(ProxyServer proxy) {

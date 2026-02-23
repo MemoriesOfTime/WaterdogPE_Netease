@@ -68,9 +68,7 @@ public class VersionInfo {
     }
 
     public void debug(boolean debug) {
-        if (debug) {
-            WaterdogPE.setLoggerLevel(Level.DEBUG);
-        }
+        WaterdogPE.setLoggerLevel(debug ? Level.DEBUG : Level.INFO);
         this.debug = debug;
     }
 

@@ -15,6 +15,9 @@
 
 package dev.waterdog.waterdogpe.packs.types;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -22,6 +25,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.UUID;
 
+@Getter
 public abstract class ResourcePack {
 
     public static final String TYPE_RESOURCES = "resources";
@@ -29,6 +33,7 @@ public abstract class ResourcePack {
 
     protected final Path packPath;
     protected PackManifest packManifest;
+    @Setter
     protected String contentKey;
     protected SupportType supportType = SupportType.UNIVERSAL;
 
@@ -99,10 +104,6 @@ public abstract class ResourcePack {
         }
         
         return false;
-    }
-
-    public PackManifest getPackManifest() {
-        return this.packManifest;
     }
 
     public String getPackName() {

@@ -25,7 +25,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 /**
- * This class holds runtime information about avaliable ServerInfo instances and known implementations.
+ * This class holds runtime information about available ServerInfo instances and known implementations.
  * Custom ServerInfo implementations should be registered by providing ServerInfoType and ServerInfoFactory.
  * Plugins should do this using onStartup() method which is triggered before serialization from the configuration file.
  */
@@ -62,11 +62,11 @@ public class ServerInfoMap {
     }
 
     /**
-     * To create new ServerInfo instance this method should be used
+     * To create new ServerInfo instance, this method should be used
      * @param serverName name of the server
      * @param address address used to access the server
      * @param publicAddress address which can accessed from upstream session or null
-     * @param serverType ServerInfoType which refers to ServerInfoFactory
+     * @param serverType ServerInfoType, which refers to ServerInfoFactory
      * @return new instance of ServerInfo
      */
     public ServerInfo createServerInfo(String serverName, InetSocketAddress address, InetSocketAddress publicAddress, ServerInfoType serverType) {
