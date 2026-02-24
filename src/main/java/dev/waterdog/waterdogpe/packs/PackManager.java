@@ -204,7 +204,7 @@ public class PackManager {
                     "", // subPackName
                     pack.getContentKey().equals("") ? "" : pack.getPackId().toString(), // contentId
                     false, // scripting
-                    true,  // raytracingCapable
+                    false, // raytracingCapable
                     isAddonPack, // addonPack
                     null // cdnUrl
             );
