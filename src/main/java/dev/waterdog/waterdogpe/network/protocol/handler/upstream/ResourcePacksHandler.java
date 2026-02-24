@@ -51,72 +51,18 @@ public class ResourcePacksHandler extends AbstractUpstreamHandler {
                         this.player.disconnect("disconnectionScreen.resourcePack");
                         break;
                     }
-                    // Debug: log DataInfo packet details
-                    StringBuilder hashHex = new StringBuilder();
-                    if (response.getHash() != null) {
-                        for (byte b : response.getHash()) {
-                            hashHex.append(String.format("%02x", b));
-                        }
-                    }
-                    this.player.getProxy().getLogger().info(
-                        "[PackDebug] DataInfo: packId={} packVer={} maxChunkSize={} chunkCount={} compressedSize={} hashLen={} hash={} premium={} type={}",
-                        response.getPackId(), response.getPackVersion(),
-                        response.getMaxChunkSize(), response.getChunkCount(),
-                        response.getCompressedPackSize(), 
-                        response.getHash() != null ? response.getHash().length : 0,
-                        hashHex.toString(),
-                        response.isPremium(), response.getType());
                     this.pendingPacks.offer(response);
                 }
                 this.sendNextPacket();
                 break;
             case HAVE_ALL_PACKS:
                 PlayerResourcePackApplyEvent event = new PlayerResourcePackApplyEvent(this.player, packManager.copyStackPacket());
-                
+
                 // Filter stack based on client type and protocol version
                 dev.waterdog.waterdogpe.packs.NetEasePackFilter.filterStackForClient(event);
-                
+
                 this.player.getProxy().getEventManager().callEvent(event);
-                // Debug: log stack packet contents
-                ResourcePackStackPacket stackPkt = event.getStackPacket();
-                // Set gameVersion to match the player's protocol version (e.g., "1.21.50")
-                // MOT uses Utils.getVersionByProtocol(protocol) which returns the version string.
-                // WaterdogPE's ProtocolVersion enum name is like MINECRAFT_PE_1_21_50, and
-                // the client sends its version in the login e.g. "1.21.50".
-                stackPkt.setGameVersion(this.player.getProtocol().getDefaultCodec().getMinecraftVersion());
-                // Add experiments to match MOT's behavior — required for pack application
-                stackPkt.getExperiments().add(new org.cloudburstmc.protocol.bedrock.data.ExperimentData("experimental_custom_ui", true));
-                stackPkt.getExperiments().add(new org.cloudburstmc.protocol.bedrock.data.ExperimentData("upcoming_creator_features", true));
-                stackPkt.setExperimentsPreviouslyToggled(true);
-                this.player.getProxy().getLogger().info("[PackDebug] Sending ResourcePackStackPacket to {} (proto={}):",
-                    this.player.getName(), this.player.getProtocol().getProtocol());
-                this.player.getProxy().getLogger().info("[PackDebug]   resourcePacks={}, behaviorPacks={}, gameVersion={}",
-                    stackPkt.getResourcePacks().size(), stackPkt.getBehaviorPacks().size(), stackPkt.getGameVersion());
-                for (var e2 : stackPkt.getResourcePacks()) {
-                    this.player.getProxy().getLogger().info("[PackDebug]   resource-stack: id={} ver={}", e2.getPackId(), e2.getPackVersion());
-                }
-                for (var e2 : stackPkt.getBehaviorPacks()) {
-                    this.player.getProxy().getLogger().info("[PackDebug]   behavior-stack: id={} ver={}", e2.getPackId(), e2.getPackVersion());
-                }
-                // Hex dump of StackPacket
-                try {
-                    var codec = this.player.getConnection().getCodec();
-                    var helper = codec.createHelper();
-                    io.netty.buffer.ByteBuf stackBuf = io.netty.buffer.Unpooled.buffer();
-                    codec.tryEncode(helper, stackBuf, stackPkt);
-                    byte[] stackBytes = new byte[stackBuf.readableBytes()];
-                    stackBuf.readBytes(stackBytes);
-                    stackBuf.release();
-                    StringBuilder sb = new StringBuilder();
-                    for (int i = 0; i < stackBytes.length; i++) {
-                        sb.append(String.format("%02x ", stackBytes[i]));
-                        if ((i + 1) % 32 == 0) sb.append("\n");
-                    }
-                    this.player.getProxy().getLogger().info("[PackDebug] StackPacket raw bytes ({} total):\n{}", stackBytes.length, sb.toString().trim());
-                } catch (Exception ex) {
-                    this.player.getProxy().getLogger().warning("[PackDebug] StackPacket hex dump failed", ex);
-                }
-                this.player.getConnection().sendPacket(stackPkt);
+                this.player.getConnection().sendPacket(event.getStackPacket());
                 break;
             case COMPLETED:
                 if (!this.player.hasUpstreamBridge()) {
@@ -131,11 +77,7 @@ public class ResourcePacksHandler extends AbstractUpstreamHandler {
     @Override
     public PacketSignal handle(ResourcePackChunkRequestPacket packet) {
         PackManager packManager = this.player.getProxy().getPackManager();
-        String version = packet.getPackVersion();
-        String idVersion = (version != null && !version.isEmpty())
-            ? packet.getPackId() + "_" + version
-            : packet.getPackId().toString();
-        ResourcePackChunkDataPacket response = packManager.packChunkDataPacket(idVersion, packet);
+        ResourcePackChunkDataPacket response = packManager.packChunkDataPacket(packet.getPackId() + "_" + packet.getPackVersion(), packet);
         if (response == null) {
             this.player.disconnect("Unknown resource pack!");
         } else {
@@ -151,24 +93,6 @@ public class ResourcePacksHandler extends AbstractUpstreamHandler {
         ResourcePackDataInfoPacket infoPacket = this.pendingPacks.poll();
         if (infoPacket != null && this.player.isConnected()) {
             this.sendingPack = infoPacket;
-            // Debug hex dump
-            try {
-                var codec = this.player.getConnection().getCodec();
-                var helper = codec.createHelper();
-                io.netty.buffer.ByteBuf buf = io.netty.buffer.Unpooled.buffer();
-                codec.tryEncode(helper, buf, infoPacket);
-                byte[] bytes = new byte[buf.readableBytes()];
-                buf.readBytes(bytes);
-                buf.release();
-                StringBuilder sb = new StringBuilder();
-                for (int i = 0; i < bytes.length; i++) {
-                    sb.append(String.format("%02x ", bytes[i]));
-                    if ((i + 1) % 32 == 0) sb.append("\n");
-                }
-                this.player.getProxy().getLogger().info("[PackDebug] DataInfoPacket raw bytes ({} total):\n{}", bytes.length, sb.toString().trim());
-            } catch (Exception ex) {
-                this.player.getProxy().getLogger().info("[PackDebug] DataInfo hex dump failed: {}", ex.toString());
-            }
             this.player.sendPacket(infoPacket);
         }
     }

@@ -198,39 +198,7 @@ public class ProxiedPlayer implements CommandSender {
             this.initialConnect();
         } else {
             ResourcePacksInfoPacket finalPacket = event.getPacket();
-            // Debug: log exact packet contents
-            this.proxy.getLogger().info("[PackDebug] Sending ResourcePacksInfoPacket to {} (proto={}):", 
-                this.getName(), this.getProtocol().getProtocol());
-            this.proxy.getLogger().info("[PackDebug]   hasAddonPacks={}, resourcePackInfos={}, behaviorPackInfos={}",
-                finalPacket.isHasAddonPacks(), finalPacket.getResourcePackInfos().size(), finalPacket.getBehaviorPackInfos().size());
-            for (var entry : finalPacket.getResourcePackInfos()) {
-                this.proxy.getLogger().info("[PackDebug]   resource: id={} ver={} addonPack={}", 
-                    entry.getPackId(), entry.getPackVersion(), entry.isAddonPack());
-            }
-            for (var entry : finalPacket.getBehaviorPackInfos()) {
-                this.proxy.getLogger().info("[PackDebug]   behavior: id={} ver={} addonPack={}", 
-                    entry.getPackId(), entry.getPackVersion(), entry.isAddonPack());
-            }
             this.connection.setPacketHandler(new ResourcePacksHandler(this));
-            // Debug: dump raw serialized bytes of the InfoPacket for binary comparison
-            try {
-                org.cloudburstmc.protocol.bedrock.codec.BedrockCodec codec = this.connection.getCodec();
-                org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper helper = codec.createHelper();
-                io.netty.buffer.ByteBuf rawBuf = io.netty.buffer.Unpooled.buffer();
-                codec.tryEncode(helper, rawBuf, finalPacket);
-                int totalLen = rawBuf.readableBytes();
-                byte[] rawBytes = new byte[Math.min(totalLen, 300)];
-                rawBuf.getBytes(0, rawBytes);
-                StringBuilder hex = new StringBuilder();
-                for (int i = 0; i < rawBytes.length; i++) {
-                    hex.append(String.format("%02x ", rawBytes[i]));
-                    if ((i + 1) % 32 == 0) hex.append("\n");
-                }
-                this.proxy.getLogger().info("[PackDebug] InfoPacket raw bytes ({} total):\n{}", totalLen, hex);
-                rawBuf.release();
-            } catch (Exception e) {
-                this.proxy.getLogger().info("[PackDebug] Failed to dump InfoPacket bytes: {}", e.toString());
-            }
             this.connection.sendPacket(finalPacket);
         }
     }

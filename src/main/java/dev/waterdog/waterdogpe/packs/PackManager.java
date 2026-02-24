@@ -36,7 +36,7 @@ import java.util.UUID;
 
 public class PackManager {
 
-    private static final long CHUNK_SIZE = 8192;
+    private static final long CHUNK_SIZE = 102400;
 
     private static final PathMatcher ZIP_PACK_MATCHER = FileSystems.getDefault().getPathMatcher("glob:**.{zip,mcpack}");
     private static final ResourcePackStackPacket.Entry EDU_PACK = new ResourcePackStackPacket.Entry("0fba4063-dba1-4281-9b89-ff9390653530", "1.0.0", "");
@@ -175,9 +175,7 @@ public class PackManager {
 
     public void rebuildPackets() {
         this.packsInfoPacket.setForcedToAccept(this.proxy.getConfiguration().isForceServerPacks());
-        // Use all-zeros UUID (no world template), matching Nukkit-MOT's default behavior.
-        // A random UUID could be misinterpreted as referencing a world template pack.
-        this.packsInfoPacket.setWorldTemplateId(new UUID(0, 0));
+        this.packsInfoPacket.setWorldTemplateId(UUID.randomUUID());
         this.packsInfoPacket.setWorldTemplateVersion("");
         this.stackPacket.setForcedToAccept(this.proxy.getConfiguration().isOverwriteClientPacks());
 
@@ -195,16 +193,16 @@ public class PackManager {
             if (isAddonPack) {
                 hasAddonPacks = true;
             }
-            
+
             ResourcePacksInfoPacket.Entry infoEntry = new ResourcePacksInfoPacket.Entry(
-                    pack.getPackId(), 
+                    pack.getPackId(),
                     pack.getVersion().toString(),
-                    pack.getPackSize(), 
-                    pack.getContentKey(), 
+                    pack.getPackSize(),
+                    pack.getContentKey(),
                     "", // subPackName
                     pack.getContentKey().equals("") ? "" : pack.getPackId().toString(), // contentId
                     false, // scripting
-                    true, // raytracingCapable
+                    false, // raytracingCapable
                     isAddonPack, // addonPack
                     null // cdnUrl
             );
@@ -224,55 +222,19 @@ public class PackManager {
         if (this.proxy.getConfiguration().enableEducationFeatures()) {
             this.stackPacket.getBehaviorPacks().add(EDU_PACK);
         }
-        
-        // Debug logging
-        this.proxy.getLogger().debug("[PackManager] Rebuilt packs: {} resource, {} behavior, hasAddonPacks={}",
-            this.packsInfoPacket.getResourcePackInfos().size(),
-            this.packsInfoPacket.getBehaviorPackInfos().size(),
-            hasAddonPacks);
-        
         ResourcePacksRebuildEvent event = new ResourcePacksRebuildEvent(this.packsInfoPacket, this.stackPacket);
         this.proxy.getEventManager().callEvent(event);
     }
 
-    /**
-     * Look up a ResourcePack by either UUID_VERSION or UUID-only key.
-     * Tries packsByIdVer first (UUID_VERSION), then falls back to packs map (UUID).
-     * This is needed because NetEase clients receive UUID-only pack IDs (no version suffix)
-     * in ResourcePackDataInfoPacket, so they send UUID-only in subsequent requests.
-     */
-    private ResourcePack lookupPack(String key) {
-        ResourcePack pack = this.packsByIdVer.get(key);
-        if (pack != null) {
-            return pack;
-        }
-        // Fallback: try parsing as UUID for direct lookup
-        try {
-            pack = this.packs.get(UUID.fromString(key));
-        } catch (IllegalArgumentException ignored) {
-            // Not a valid UUID, try extracting UUID from "UUID_VERSION" format
-            int idx = key.indexOf('_');
-            if (idx > 0) {
-                try {
-                    pack = this.packs.get(UUID.fromString(key.substring(0, idx)));
-                } catch (IllegalArgumentException ignored2) {
-                }
-            }
-        }
-        return pack;
-    }
-
     public ResourcePackDataInfoPacket packInfoFromIdVer(String idVersion) {
-        ResourcePack resourcePack = this.lookupPack(idVersion);
+        ResourcePack resourcePack = this.packsByIdVer.get(idVersion);
         if (resourcePack == null) {
             return null;
         }
 
         ResourcePackDataInfoPacket packet = new ResourcePackDataInfoPacket();
         packet.setPackId(resourcePack.getPackId());
-        // Don't set packVersion — the serializer will send just UUID without "_VERSION" suffix.
-        // This matches Nukkit-MOT's behavior and is required for NetEase clients which use
-        // the DataInfo pack ID as their cache key.
+        packet.setPackVersion(resourcePack.getVersion().toString());
         packet.setMaxChunkSize(CHUNK_SIZE);
         packet.setChunkCount((resourcePack.getPackSize() - 1) / packet.getMaxChunkSize() + 1);
         packet.setCompressedPackSize(resourcePack.getPackSize());
@@ -290,7 +252,7 @@ public class PackManager {
     }
 
     public ResourcePackChunkDataPacket packChunkDataPacket(String idVersion, ResourcePackChunkRequestPacket from) {
-        ResourcePack resourcePack = this.lookupPack(idVersion);
+        ResourcePack resourcePack = this.packsByIdVer.get(idVersion);
         if (resourcePack == null) {
             return null;
         }
