@@ -204,7 +204,7 @@ public class PackManager {
                     "", // subPackName
                     pack.getContentKey().equals("") ? "" : pack.getPackId().toString(), // contentId
                     false, // scripting
-                    false, // raytracingCapable
+                    true, // raytracingCapable
                     isAddonPack, // addonPack
                     null // cdnUrl
             );
@@ -277,15 +277,14 @@ public class PackManager {
         packet.setChunkCount((resourcePack.getPackSize() - 1) / packet.getMaxChunkSize() + 1);
         packet.setCompressedPackSize(resourcePack.getPackSize());
         packet.setHash(resourcePack.getHash());
-        // IMPORTANT: The Protocol library's TypeMap has different ID assignments than the
-        // real Bedrock protocol. Real protocol: Resources=6, Behavior=4, Addon=1.
-        // Protocol library TypeMap: RESOURCES→1, ADDON→4, CACHED→6.
-        // To match Nukkit-MOT (which uses the real protocol IDs), we use CACHED(→6)
-        // for resource packs and ADDON(→4) for behavior packs.
+        // v388 re-mapped the RESOURCE_PACK_TYPES TypeMap from v361:
+        //   wire 1 = ADDON, wire 2 = CACHED, wire 4 = DATA_ADD_ON, wire 6 = RESOURCES
+        // MOT sends type=4 for behavior and type=6 for resource packs.
+        // So we use DATA_ADD_ON (→wire 4) for behavior and RESOURCES (→wire 6) for resource.
         if (resourcePack.getType().equals(ResourcePack.TYPE_RESOURCES)) {
-            packet.setType(ResourcePackType.CACHED); // wire value 6 = real Resources
+            packet.setType(ResourcePackType.RESOURCES);  // wire 6 = MOT's TYPE_RESOURCE
         } else if (resourcePack.getType().equals(ResourcePack.TYPE_DATA)) {
-            packet.setType(ResourcePackType.ADDON);  // wire value 4 = real Behavior
+            packet.setType(ResourcePackType.DATA_ADD_ON); // wire 4 = MOT's TYPE_BEHAVIOR
         }
         return packet;
     }
