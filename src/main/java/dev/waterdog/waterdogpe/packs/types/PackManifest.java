@@ -33,7 +33,7 @@ public class PackManifest {
 
     public static final Path MANIFEST_PATH = Paths.get("manifest.json");
 
-    public static final String BEHAVIOR_PACK = "behavior";
+    public static final String BEHAVIOR_PACK = "data";
     public static final String RESOURCE_PACK = "resources";
     @SerializedName("format_version")
     private String formatVersion;
