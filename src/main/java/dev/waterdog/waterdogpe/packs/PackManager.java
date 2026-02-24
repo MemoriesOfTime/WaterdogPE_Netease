@@ -28,6 +28,7 @@ import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.common.util.Preconditions;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.HashMap;
@@ -103,7 +104,6 @@ public class PackManager {
             return null;
         }
 
-        // Detect NetEase mod behavior pack by checking for pack_manifest.json
         pack.setSupportType(this.detectPackSupportType(pack));
 
         File contentKeyFile = new File(packPath.getParent().toFile(), packPath.toFile().getName() + ".key");
