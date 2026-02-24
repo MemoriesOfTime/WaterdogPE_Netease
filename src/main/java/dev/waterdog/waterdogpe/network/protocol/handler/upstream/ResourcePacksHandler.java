@@ -22,6 +22,7 @@ import org.cloudburstmc.protocol.bedrock.packet.ResourcePackChunkDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ResourcePackChunkRequestPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ResourcePackClientResponsePacket;
 import org.cloudburstmc.protocol.bedrock.packet.ResourcePackDataInfoPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ResourcePackStackPacket;
 import org.cloudburstmc.protocol.common.PacketSignal;
 
 import java.util.LinkedList;
@@ -59,7 +60,9 @@ public class ResourcePacksHandler extends AbstractUpstreamHandler {
                 this.sendNextPacket();
                 break;
             case HAVE_ALL_PACKS:
-                PlayerResourcePackApplyEvent event = new PlayerResourcePackApplyEvent(this.player, packManager.copyStackPacket());
+                // buildStackPacket handles protocol-version merge (e.g. v898+ behavior→resource)
+                ResourcePackStackPacket stackPkt = packManager.buildStackPacket(this.player.getProtocol());
+                PlayerResourcePackApplyEvent event = new PlayerResourcePackApplyEvent(this.player, stackPkt);
 
                 // Filter stack based on client type and protocol version
                 dev.waterdog.waterdogpe.packs.NetEasePackFilter.filterStackForClient(event);

@@ -190,8 +190,10 @@ public class PackManager {
 
         boolean hasAddonPacks = false;
         for (ResourcePack pack : this.packs.values()) {
-            boolean isAddonPack = pack.getType().equals(ResourcePack.TYPE_DATA);
-            if (isAddonPack) {
+            String packType = pack.getType();
+            // Behavior packs: NetEase uses TYPE_DATA ("data"), vanilla uses TYPE_BEHAVIOR ("behavior")
+            boolean isBehaviorPack = ResourcePack.TYPE_DATA.equals(packType) || ResourcePack.TYPE_BEHAVIOR.equals(packType);
+            if (isBehaviorPack) {
                 hasAddonPacks = true;
             }
 
@@ -203,22 +205,19 @@ public class PackManager {
                     "", // subPackName
                     pack.getContentKey().equals("") ? "" : pack.getPackId().toString(), // contentId
                     false, // scripting
-                    false, // raytracingCapable
-                    isAddonPack, // addonPack
+                    false,  // raytracingCapable
+                    isBehaviorPack, // addonPack
                     null // cdnUrl
             );
             ResourcePackStackPacket.Entry stackEntry = new ResourcePackStackPacket.Entry(pack.getPackId().toString(), pack.getVersion().toString(), "");
-            if (isBehavior) {
-                hasBehaviorPacks = true;
+            if (isBehaviorPack) {
                 this.packsInfoPacket.getBehaviorPackInfos().add(infoEntry);
                 this.stackPacket.getBehaviorPacks().add(stackEntry);
-            } else if (pack.getType().equals(ResourcePack.TYPE_RESOURCES)) {
+            } else {
                 this.packsInfoPacket.getResourcePackInfos().add(infoEntry);
                 this.stackPacket.getResourcePacks().add(stackEntry);
             }
         }
-        this.packsInfoPacket.setHasAddonPacks(hasBehaviorPacks);
-
         // Set hasAddonPacks flag (since v662 1.20.70)
         this.packsInfoPacket.setHasAddonPacks(hasAddonPacks);
 
@@ -288,14 +287,14 @@ public class PackManager {
         packet.setChunkCount((resourcePack.getPackSize() - 1) / packet.getMaxChunkSize() + 1);
         packet.setCompressedPackSize(resourcePack.getPackSize());
         packet.setHash(resourcePack.getHash());
-        // v388 re-mapped the RESOURCE_PACK_TYPES TypeMap from v361:
-        //   wire 1 = ADDON, wire 2 = CACHED, wire 4 = DATA_ADD_ON, wire 6 = RESOURCES
-        // MOT sends type=4 for behavior and type=6 for resource packs.
-        // So we use DATA_ADD_ON (→wire 4) for behavior and RESOURCES (→wire 6) for resource.
-        if (resourcePack.getType().equals(ResourcePack.TYPE_RESOURCES)) {
-            packet.setType(ResourcePackType.RESOURCES);  // wire 6 = MOT's TYPE_RESOURCE
-        } else if (resourcePack.getType().equals(ResourcePack.TYPE_DATA)) {
-            packet.setType(ResourcePackType.DATA_ADD_ON); // wire 4 = MOT's TYPE_BEHAVIOR
+
+        String packType = resourcePack.getType();
+        if (ResourcePack.TYPE_RESOURCES.equals(packType)) {
+            packet.setType(ResourcePackType.RESOURCES);   // wire 6
+        } else if (ResourcePack.TYPE_DATA.equals(packType) || ResourcePack.TYPE_BEHAVIOR.equals(packType)) {
+            packet.setType(ResourcePackType.DATA_ADD_ON); // wire 4
+        } else {
+            packet.setType(ResourcePackType.RESOURCES);   // fallback
         }
         return packet;
     }
@@ -329,38 +328,5 @@ public class PackManager {
 
     public Map<String, ResourcePack> getPacksByIdVer() {
         return this.packsByIdVer;
-    }
-
-    /**
-     * Returns a deep copy of the packs info packet.
-     * Use this instead of getPacksInfoPacket() when the packet will be modified (e.g., by NetEasePackFilter).
-     */
-    public ResourcePacksInfoPacket copyPacksInfoPacket() {
-        ResourcePacksInfoPacket copy = new ResourcePacksInfoPacket();
-        copy.setForcedToAccept(this.packsInfoPacket.isForcedToAccept());
-        copy.setHasAddonPacks(this.packsInfoPacket.isHasAddonPacks());
-        copy.setScriptingEnabled(this.packsInfoPacket.isScriptingEnabled());
-        copy.setForcingServerPacksEnabled(this.packsInfoPacket.isForcingServerPacksEnabled());
-        copy.setWorldTemplateId(this.packsInfoPacket.getWorldTemplateId());
-        copy.setWorldTemplateVersion(this.packsInfoPacket.getWorldTemplateVersion());
-        copy.getResourcePackInfos().addAll(this.packsInfoPacket.getResourcePackInfos());
-        copy.getBehaviorPackInfos().addAll(this.packsInfoPacket.getBehaviorPackInfos());
-        return copy;
-    }
-
-    /**
-     * Returns a deep copy of the stack packet.
-     * Use this instead of getStackPacket() when the packet will be modified (e.g., by NetEasePackFilter).
-     */
-    public ResourcePackStackPacket copyStackPacket() {
-        ResourcePackStackPacket copy = new ResourcePackStackPacket();
-        copy.setForcedToAccept(this.stackPacket.isForcedToAccept());
-        copy.setGameVersion(this.stackPacket.getGameVersion());
-        copy.setExperimentsPreviouslyToggled(this.stackPacket.isExperimentsPreviouslyToggled());
-        copy.setHasEditorPacks(this.stackPacket.isHasEditorPacks());
-        copy.getResourcePacks().addAll(this.stackPacket.getResourcePacks());
-        copy.getBehaviorPacks().addAll(this.stackPacket.getBehaviorPacks());
-        copy.getExperiments().addAll(this.stackPacket.getExperiments());
-        return copy;
     }
 }
