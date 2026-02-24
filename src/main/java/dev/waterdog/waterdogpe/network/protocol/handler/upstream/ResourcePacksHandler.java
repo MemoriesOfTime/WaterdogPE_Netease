@@ -15,10 +15,13 @@
 
 package dev.waterdog.waterdogpe.network.protocol.handler.upstream;
 
-import org.cloudburstmc.protocol.bedrock.packet.*;
 import dev.waterdog.waterdogpe.event.defaults.PlayerResourcePackApplyEvent;
 import dev.waterdog.waterdogpe.packs.PackManager;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
+import org.cloudburstmc.protocol.bedrock.packet.ResourcePackChunkDataPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ResourcePackChunkRequestPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ResourcePackClientResponsePacket;
+import org.cloudburstmc.protocol.bedrock.packet.ResourcePackDataInfoPacket;
 import org.cloudburstmc.protocol.common.PacketSignal;
 
 import java.util.LinkedList;
@@ -56,7 +59,7 @@ public class ResourcePacksHandler extends AbstractUpstreamHandler {
                 this.sendNextPacket();
                 break;
             case HAVE_ALL_PACKS:
-                PlayerResourcePackApplyEvent event = new PlayerResourcePackApplyEvent(this.player, packManager.getStackPacket());
+                PlayerResourcePackApplyEvent event = new PlayerResourcePackApplyEvent(this.player, packManager.buildStackPacket(this.player.getProtocol()));
                 this.player.getProxy().getEventManager().callEvent(event);
                 this.player.getConnection().sendPacket(event.getStackPacket());
                 break;

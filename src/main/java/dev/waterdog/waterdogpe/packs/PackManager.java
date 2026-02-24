@@ -15,15 +15,16 @@
 
 package dev.waterdog.waterdogpe.packs;
 
+import dev.waterdog.waterdogpe.ProxyServer;
+import dev.waterdog.waterdogpe.event.defaults.ResourcePacksRebuildEvent;
+import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
+import dev.waterdog.waterdogpe.packs.types.ResourcePack;
+import dev.waterdog.waterdogpe.packs.types.ZipResourcePack;
+import dev.waterdog.waterdogpe.utils.FileUtils;
 import io.netty.buffer.Unpooled;
 import lombok.Getter;
 import org.cloudburstmc.protocol.bedrock.data.ResourcePackType;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import dev.waterdog.waterdogpe.ProxyServer;
-import dev.waterdog.waterdogpe.event.defaults.ResourcePacksRebuildEvent;
-import dev.waterdog.waterdogpe.packs.types.ResourcePack;
-import dev.waterdog.waterdogpe.packs.types.ZipResourcePack;
-import dev.waterdog.waterdogpe.utils.FileUtils;
 import org.cloudburstmc.protocol.common.util.Preconditions;
 
 import java.io.File;
@@ -166,24 +167,74 @@ public class PackManager {
 
         this.stackPacket.setGameVersion("");
 
+        boolean hasBehaviorPacks = false;
         for (ResourcePack pack : this.packs.values()) {
+            boolean isBehavior = pack.getType().equals(ResourcePack.TYPE_DATA);
             ResourcePacksInfoPacket.Entry infoEntry = new ResourcePacksInfoPacket.Entry(pack.getPackId(), pack.getVersion().toString(),
-                    pack.getPackSize(), pack.getContentKey(), "", pack.getContentKey().isEmpty() ? "" : pack.getPackId().toString(), false, false, false, null);
+                    pack.getPackSize(), pack.getContentKey(), "", pack.getContentKey().isEmpty() ? "" : pack.getPackId().toString(), false, false, isBehavior, null);
             ResourcePackStackPacket.Entry stackEntry = new ResourcePackStackPacket.Entry(pack.getPackId().toString(), pack.getVersion().toString(), "");
-            if (pack.getType().equals(ResourcePack.TYPE_RESOURCES)) {
-                this.packsInfoPacket.getResourcePackInfos().add(infoEntry);
-                this.stackPacket.getResourcePacks().add(stackEntry);
-            } else if (pack.getType().equals(ResourcePack.TYPE_DATA)) {
+            if (isBehavior) {
+                hasBehaviorPacks = true;
                 this.packsInfoPacket.getBehaviorPackInfos().add(infoEntry);
                 this.stackPacket.getBehaviorPacks().add(stackEntry);
+            } else if (pack.getType().equals(ResourcePack.TYPE_RESOURCES)) {
+                this.packsInfoPacket.getResourcePackInfos().add(infoEntry);
+                this.stackPacket.getResourcePacks().add(stackEntry);
             }
         }
+        this.packsInfoPacket.setHasAddonPacks(hasBehaviorPacks);
 
         if (this.proxy.getConfiguration().enableEducationFeatures()) {
             this.stackPacket.getBehaviorPacks().add(EDU_PACK);
         }
         ResourcePacksRebuildEvent event = new ResourcePacksRebuildEvent(this.packsInfoPacket, this.stackPacket);
         this.proxy.getEventManager().callEvent(event);
+    }
+
+    /**
+     * Build protocol-version-aware ResourcePacksInfoPacket.
+     * v729+: behaviorPackInfos is no longer serialized, merge behavior packs into resourcePackInfos.
+     */
+    public ResourcePacksInfoPacket buildPacksInfoPacket(ProtocolVersion protocol) {
+        ResourcePacksInfoPacket packet = new ResourcePacksInfoPacket();
+        packet.setForcedToAccept(this.packsInfoPacket.isForcedToAccept());
+        packet.setWorldTemplateId(this.packsInfoPacket.getWorldTemplateId());
+        packet.setWorldTemplateVersion(this.packsInfoPacket.getWorldTemplateVersion());
+        packet.setHasAddonPacks(this.packsInfoPacket.isHasAddonPacks());
+        packet.setScriptingEnabled(this.packsInfoPacket.isScriptingEnabled());
+        packet.setForcingServerPacksEnabled(this.packsInfoPacket.isForcingServerPacksEnabled());
+
+        if (protocol.isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_30)) {
+            // v729+: merge behavior packs into resource pack list
+            packet.getResourcePackInfos().addAll(this.packsInfoPacket.getResourcePackInfos());
+            packet.getResourcePackInfos().addAll(this.packsInfoPacket.getBehaviorPackInfos());
+        } else {
+            packet.getResourcePackInfos().addAll(this.packsInfoPacket.getResourcePackInfos());
+            packet.getBehaviorPackInfos().addAll(this.packsInfoPacket.getBehaviorPackInfos());
+        }
+        return packet;
+    }
+
+    /**
+     * Build protocol-version-aware ResourcePackStackPacket.
+     * v898+: behaviorPacks is no longer serialized, merge behavior packs into resourcePacks.
+     */
+    public ResourcePackStackPacket buildStackPacket(ProtocolVersion protocol) {
+        ResourcePackStackPacket packet = new ResourcePackStackPacket();
+        packet.setForcedToAccept(this.stackPacket.isForcedToAccept());
+        packet.setGameVersion(this.stackPacket.getGameVersion());
+        packet.getExperiments().addAll(this.stackPacket.getExperiments());
+        packet.setExperimentsPreviouslyToggled(this.stackPacket.isExperimentsPreviouslyToggled());
+
+        if (protocol.isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_130)) {
+            // v898+: merge behavior packs into resource pack list
+            packet.getResourcePacks().addAll(this.stackPacket.getResourcePacks());
+            packet.getResourcePacks().addAll(this.stackPacket.getBehaviorPacks());
+        } else {
+            packet.getResourcePacks().addAll(this.stackPacket.getResourcePacks());
+            packet.getBehaviorPacks().addAll(this.stackPacket.getBehaviorPacks());
+        }
+        return packet;
     }
 
     public ResourcePackDataInfoPacket packInfoFromIdVer(String idVersion) {

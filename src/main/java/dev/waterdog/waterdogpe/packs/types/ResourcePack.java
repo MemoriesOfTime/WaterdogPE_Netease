@@ -74,6 +74,11 @@ public abstract class ResourcePack {
     }
 
     public String getType() {
+        for (PackManifest.PackModule module : this.packManifest.getModules()) {
+            if (TYPE_DATA.equals(module.getType())) {
+                return TYPE_DATA;
+            }
+        }
         return this.packManifest.getModules().get(0).getType();
     }
 
