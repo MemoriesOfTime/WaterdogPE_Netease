@@ -60,7 +60,7 @@ public class ResourcePacksHandler extends AbstractUpstreamHandler {
                 this.sendNextPacket();
                 break;
             case HAVE_ALL_PACKS:
-                // buildStackPacket handles protocol-version merge (e.g. v898+ behavior→resource)
+                // buildStackPacket handles protocol-version merge (behavior→resource for v898+)
                 ResourcePackStackPacket stackPkt = packManager.buildStackPacket(this.player.getProtocol());
                 PlayerResourcePackApplyEvent event = new PlayerResourcePackApplyEvent(this.player, stackPkt);
 

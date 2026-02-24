@@ -29,8 +29,8 @@ import java.util.UUID;
 public abstract class ResourcePack {
 
     public static final String TYPE_RESOURCES = "resources";
-    public static final String TYPE_BEHAVIOR = "behavior";  // Vanilla behavior pack type
-    public static final String TYPE_DATA = "data";          // NetEase behavior pack type
+    public static final String TYPE_BEHAVIOR = "behavior";
+    public static final String TYPE_DATA = "data";
 
     protected final Path packPath;
     protected PackManifest packManifest;

@@ -28,7 +28,6 @@ import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.common.util.Preconditions;
 
 import java.io.File;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.HashMap;
@@ -117,19 +116,14 @@ public class PackManager {
     }
 
     /**
-     * Detect the support type of a resource pack.
-     * NetEase mod behavior packs typically use pack_manifest.json instead of manifest.json.
+     * Determine the SupportType of a resource pack based on its module type.
+     * TYPE_DATA ("data") and TYPE_BEHAVIOR ("behavior") are behavior pack types which should not be sent to vanilla (Microsoft) clients.
      */
     private ResourcePack.SupportType detectPackSupportType(ResourcePack pack) {
-        try {
-            // Check if pack_manifest.json exists (NetEase specific)
-            Path packManifestPath = Paths.get("pack_manifest.json");
-            if (pack.getStream(packManifestPath) != null) {
-                this.proxy.getLogger().info("Detected NetEase mod pack: " + pack.getPackPath().getFileName());
-                return ResourcePack.SupportType.NETEASE;
-            }
-        } catch (IOException e) {
-            // Ignore, will default to UNIVERSAL
+        String packType = pack.getType();
+        if (ResourcePack.TYPE_DATA.equals(packType) || ResourcePack.TYPE_BEHAVIOR.equals(packType)) {
+            this.proxy.getLogger().info("Detected behavior pack (type=" + packType + ", NetEase only): " + pack.getPackPath().getFileName());
+            return ResourcePack.SupportType.NETEASE;
         }
         return ResourcePack.SupportType.UNIVERSAL;
     }
@@ -191,7 +185,6 @@ public class PackManager {
         boolean hasAddonPacks = false;
         for (ResourcePack pack : this.packs.values()) {
             String packType = pack.getType();
-            // Behavior packs: NetEase uses TYPE_DATA ("data"), vanilla uses TYPE_BEHAVIOR ("behavior")
             boolean isBehaviorPack = ResourcePack.TYPE_DATA.equals(packType) || ResourcePack.TYPE_BEHAVIOR.equals(packType);
             if (isBehaviorPack) {
                 hasAddonPacks = true;
