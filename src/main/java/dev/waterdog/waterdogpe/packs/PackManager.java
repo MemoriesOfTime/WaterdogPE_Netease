@@ -196,7 +196,7 @@ public class PackManager {
                     pack.getPackSize(),
                     pack.getContentKey(),
                     "", // subPackName
-                    pack.getContentKey().equals("") ? "" : pack.getPackId().toString(), // contentId
+                    pack.getContentKey().isEmpty() ? "" : pack.getPackId().toString(), // contentId
                     false, // scripting
                     false,  // raytracingCapable
                     isBehaviorPack, // addonPack
@@ -307,19 +307,4 @@ public class PackManager {
         return packet;
     }
 
-    public ResourcePacksInfoPacket getPacksInfoPacket() {
-        return this.packsInfoPacket;
-    }
-
-    public ResourcePackStackPacket getStackPacket() {
-        return this.stackPacket;
-    }
-
-    public Map<UUID, ResourcePack> getPacks() {
-        return this.packs;
-    }
-
-    public Map<String, ResourcePack> getPacksByIdVer() {
-        return this.packsByIdVer;
-    }
 }

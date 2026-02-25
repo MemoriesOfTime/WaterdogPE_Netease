@@ -36,6 +36,7 @@ public abstract class ResourcePack {
     protected PackManifest packManifest;
     @Setter
     protected String contentKey;
+    @Setter
     protected SupportType supportType = SupportType.UNIVERSAL;
 
     public ResourcePack(Path packPath) {
@@ -128,23 +129,4 @@ public abstract class ResourcePack {
         return this.packManifest.getModules().get(0).getType();
     }
 
-    public Path getPackPath() {
-        return this.packPath;
-    }
-
-    public String getContentKey() {
-        return contentKey;
-    }
-
-    public void setContentKey(String contentKey) {
-        this.contentKey = contentKey;
-    }
-
-    public SupportType getSupportType() {
-        return this.supportType;
-    }
-
-    public void setSupportType(SupportType supportType) {
-        this.supportType = supportType;
-    }
 }
