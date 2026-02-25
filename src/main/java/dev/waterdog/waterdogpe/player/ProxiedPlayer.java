@@ -35,6 +35,7 @@ import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
 import dev.waterdog.waterdogpe.network.protocol.user.LoginData;
 import dev.waterdog.waterdogpe.network.protocol.user.Platform;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
+import dev.waterdog.waterdogpe.packs.NetEasePackFilter;
 import dev.waterdog.waterdogpe.utils.types.Permission;
 import dev.waterdog.waterdogpe.utils.types.TextContainer;
 import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
@@ -187,19 +188,16 @@ public class ProxiedPlayer implements CommandSender {
     private void sendResourcePacks() {
         ResourcePacksInfoPacket packet = this.proxy.getPackManager().buildPacksInfoPacket(this.getProtocol());
         PlayerResourcePackInfoSendEvent event = new PlayerResourcePackInfoSendEvent(this, packet);
-        
-        // Filter packs based on client type (NetEase vs Microsoft)
-        dev.waterdog.waterdogpe.packs.NetEasePackFilter.filterPacksForClient(event);
-        
         this.proxy.getEventManager().callEvent(event);
         if (event.isCancelled()) {
             // Connect player to downstream without sending ResourcePacksInfoPacket
             this.acceptResourcePacks = false;
             this.initialConnect();
         } else {
-            ResourcePacksInfoPacket finalPacket = event.getPacket();
+            // Filter packs based on client type (NetEase vs Microsoft) after plugin event
+            NetEasePackFilter.filterPacksForClient(event);
             this.connection.setPacketHandler(new ResourcePacksHandler(this));
-            this.connection.sendPacket(finalPacket);
+            this.connection.sendPacket(event.getPacket());
         }
     }
 

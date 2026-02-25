@@ -16,13 +16,10 @@
 package dev.waterdog.waterdogpe.network.protocol.handler.upstream;
 
 import dev.waterdog.waterdogpe.event.defaults.PlayerResourcePackApplyEvent;
+import dev.waterdog.waterdogpe.packs.NetEasePackFilter;
 import dev.waterdog.waterdogpe.packs.PackManager;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import org.cloudburstmc.protocol.bedrock.packet.ResourcePackChunkDataPacket;
-import org.cloudburstmc.protocol.bedrock.packet.ResourcePackChunkRequestPacket;
-import org.cloudburstmc.protocol.bedrock.packet.ResourcePackClientResponsePacket;
-import org.cloudburstmc.protocol.bedrock.packet.ResourcePackDataInfoPacket;
-import org.cloudburstmc.protocol.bedrock.packet.ResourcePackStackPacket;
+import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.common.PacketSignal;
 
 import java.util.LinkedList;
@@ -63,11 +60,10 @@ public class ResourcePacksHandler extends AbstractUpstreamHandler {
                 // buildStackPacket handles protocol-version merge (behavior→resource for v898+)
                 ResourcePackStackPacket stackPkt = packManager.buildStackPacket(this.player.getProtocol());
                 PlayerResourcePackApplyEvent event = new PlayerResourcePackApplyEvent(this.player, stackPkt);
-
-                // Filter stack based on client type and protocol version
-                dev.waterdog.waterdogpe.packs.NetEasePackFilter.filterStackForClient(event);
-
                 this.player.getProxy().getEventManager().callEvent(event);
+
+                // Filter stack based on client type after plugin event
+                NetEasePackFilter.filterStackForClient(event);
                 this.player.getConnection().sendPacket(event.getStackPacket());
                 break;
             case COMPLETED:
