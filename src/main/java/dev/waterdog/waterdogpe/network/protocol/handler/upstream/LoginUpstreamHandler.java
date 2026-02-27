@@ -18,6 +18,7 @@ package dev.waterdog.waterdogpe.network.protocol.handler.upstream;
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.WaterdogPE;
 import dev.waterdog.waterdogpe.event.defaults.PlayerAuthenticatedEvent;
+import dev.waterdog.waterdogpe.event.defaults.PlayerPreAuthEvent;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.CompressionType;
 import dev.waterdog.waterdogpe.network.connection.codec.initializer.ProxiedSessionInitializer;
 import dev.waterdog.waterdogpe.network.connection.peer.BedrockServerSession;
@@ -189,8 +190,15 @@ public class LoginUpstreamHandler implements BedrockPacketHandler {
                     packet.getAuthPayload().getClass().getSimpleName(), packet.getAuthPayload().getAuthType());
 
             handshakeEntry = HandshakeUtils.processHandshake(this.session, packet, protocol, strictAuth, this.netEaseClient);
-            if (!handshakeEntry.isXboxAuthed() && strictAuth) {
-                this.onLoginFailed(handshakeEntry, null, "disconnectionScreen.notAuthenticated");
+
+            PlayerPreAuthEvent preAuthEvent = new PlayerPreAuthEvent(
+                    handshakeEntry.getClientData(), handshakeEntry.getXuid(),
+                    handshakeEntry.getUuid(), handshakeEntry.getDisplayName(),
+                    this.session.getSocketAddress(), handshakeEntry.isXboxAuthed());
+            this.proxy.getEventManager().callEvent(preAuthEvent);
+
+            if (!preAuthEvent.isAuthenticated() && strictAuth) {
+                this.onLoginFailed(handshakeEntry, null, preAuthEvent.getKickMessage());
                 this.proxy.getLogger().info("[{}|{}] <-> Upstream has disconnected due to failed XBOX authentication!", this.session.getSocketAddress(), handshakeEntry.getDisplayName());
                 return PacketSignal.HANDLED;
             }
