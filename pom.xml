@@ -7,7 +7,7 @@
     <description>Brand new Minecraft: Bedrock Edition proxy created by authors of well-known Waterdog proxy
     </description>
     <groupId>dev.waterdog.waterdogpe</groupId>
-    <artifactId>waterdog</artifactId>
+    <artifactId>waterdog-netease</artifactId>
     <version>2.0.4-SNAPSHOT</version>
     <packaging>jar</packaging>
 
@@ -38,12 +38,12 @@
 
     <distributionManagement>
         <repository>
-            <id>waterdog-releases</id>
-            <url>https://repo.waterdog.dev/releases</url>
+            <id>mot-repo-release</id>
+            <url>https://repo.mot.dev/repository/maven-releases/</url>
         </repository>
         <snapshotRepository>
-            <id>waterdog-snapshots</id>
-            <url>https://repo.waterdog.dev/snapshots</url>
+            <id>mot-repo-snapshot</id>
+            <url>https://repo.mot.dev/repository/maven-snapshots/</url>
         </snapshotRepository>
     </distributionManagement>
 
