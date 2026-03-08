@@ -211,7 +211,8 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
         this.executeOnEventLoop(() -> {
             if (this.channel.pipeline().get(BedrockEncryptionEncoder.class) != null ||
                     this.channel.pipeline().get(BedrockEncryptionDecoder.class) != null) {
-                throw new IllegalStateException("Encryption is already enabled");
+                log.warn("Encryption is already enabled for {}", this.getSocketAddress());
+                return;
             }
 
             int protocolVersion = this.getCodec().getProtocolVersion();
@@ -281,15 +282,17 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
 
     @Override
     public void setPacketHandler(BedrockPacketHandler handler) {
-        if (handler instanceof ProxyPacketHandler packetHandler) {
-            if (this.getPacketHandler() instanceof ProxyBatchBridge bridge) {
-                bridge.setHandler(packetHandler);
+        this.executeOnEventLoop(() -> {
+            if (handler instanceof ProxyPacketHandler packetHandler) {
+                if (this.getPacketHandler() instanceof ProxyBatchBridge bridge) {
+                    bridge.setHandler(packetHandler);
+                } else {
+                    this.packetHandler = new ProxyBatchBridge(this.getCodec(), this.getCodecHelper(), packetHandler);
+                }
             } else {
-                this.packetHandler = new ProxyBatchBridge(this.getCodec(), this.getCodecHelper(), packetHandler);
+                this.packetHandler = handler;
             }
-        } else {
-            this.packetHandler = handler;
-        }
+        });
     }
 
     @Override
@@ -324,11 +327,13 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
     }
 
     private void sendBatch0(BedrockBatchWrapper wrapper) {
+        // Non-standard compression (e.g. Snappy) — must re-compress with downstream's algorithm
         if (!(wrapper.getAlgorithm() instanceof PacketCompressionAlgorithm)) {
             wrapper.setCompressed(null);
         } else if (this.player.getProtocol().isBefore(ProtocolVersion.MINECRAFT_PE_1_20_60) &&
                 (this.compressionStrategy == null ||
                         !Objects.equals(wrapper.getAlgorithm(), this.compressionStrategy.getDefaultCompression().getAlgorithm()))) {
+            // Before 1.20.60, compression header is absent — must re-compress if algorithm differs
             wrapper.setCompressed(null);
         }
 
