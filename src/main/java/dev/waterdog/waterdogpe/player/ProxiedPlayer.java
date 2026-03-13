@@ -844,6 +844,10 @@ public class ProxiedPlayer implements CommandSender {
         return this.loginData.getDeviceId();
     }
 
+    public boolean isJavaClient() {
+        return this.loginData.isJavaClient();
+    }
+
     public ProtocolVersion getProtocol() {
         return this.loginData.getProtocol();
     }

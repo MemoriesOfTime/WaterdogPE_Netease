@@ -87,6 +87,10 @@ public class HandshakeEntry {
         if (this.clientData.has("DeviceId")) {
             builder.deviceId(this.clientData.get("DeviceId").getAsString());
         }
+        if (this.clientData.has("ViaProxyAuthToken")) {
+            String token = this.clientData.get("ViaProxyAuthToken").getAsString();
+            builder.javaClient(token != null && !token.isEmpty());
+        }
         return builder.build();
     }
 

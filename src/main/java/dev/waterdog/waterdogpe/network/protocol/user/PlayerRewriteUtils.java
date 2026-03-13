@@ -191,7 +191,7 @@ public class PlayerRewriteUtils {
     }
 
     public static void injectRemoveAllPlayers(ProxiedConnection session, Collection<UUID> playerList) {
-        if (session == null || !session.isConnected()) {
+        if (session == null || !session.isConnected() || playerList == null || playerList.isEmpty()) {
             return;
         }
         PlayerListPacket packet = new PlayerListPacket();
@@ -239,7 +239,7 @@ public class PlayerRewriteUtils {
     }
 
     public static void injectRemoveScoreInfos(ProxiedConnection session, Long2ObjectMap<ScoreInfo> scoreInfos) {
-        if (session == null || !session.isConnected()) {
+        if (session == null || !session.isConnected() || scoreInfos == null || scoreInfos.isEmpty()) {
             return;
         }
         SetScorePacket packet = new SetScorePacket();

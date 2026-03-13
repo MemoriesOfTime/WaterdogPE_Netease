@@ -57,6 +57,8 @@ public class LoginData {
     private final String deviceModel = null;
     @Builder.Default
     private final String deviceId = null;
+    @Builder.Default
+    private final boolean javaClient = false;
 
     private final KeyPair keyPair;
     private final JsonObject clientData;

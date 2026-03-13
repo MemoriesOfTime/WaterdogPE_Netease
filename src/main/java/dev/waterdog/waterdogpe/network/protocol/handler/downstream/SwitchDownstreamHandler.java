@@ -280,6 +280,12 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
         // After client successfully changes dimension we receive PlayerActionPacket#DIMENSION_CHANGE_SUCCESS and continue in transfer
         int newDimension = determineDimensionId(rewriteData.getDimension(), packet.getDimensionId());
 
+        // Java clients (via ViaProxy) handle same-dimension switching internally through ViaBedrock,
+        // skip the fake dimension trick to avoid getting stuck on loading screens.
+        if (this.player.getLoginData().isJavaClient() && newDimension != packet.getDimensionId()) {
+            newDimension = packet.getDimensionId();
+        }
+
         TransferCallback transferCallback = new TransferCallback(this.player, this.connection, oldConnection.getServerInfo(), packet.getDimensionId());
         rewriteData.setDimension(newDimension);
         rewriteData.setTransferCallback(transferCallback);
