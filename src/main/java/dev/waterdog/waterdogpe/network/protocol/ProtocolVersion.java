@@ -23,6 +23,7 @@ import lombok.ToString;
 import org.allaymc.protocol.extension.codec.v630.Bedrock_v630_NetEase;
 import org.allaymc.protocol.extension.codec.v686.Bedrock_v686_NetEase;
 import org.allaymc.protocol.extension.codec.v766.Bedrock_v766_NetEase;
+import org.allaymc.protocol.extension.codec.v819.Bedrock_v819_NetEase;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
 import org.cloudburstmc.protocol.bedrock.codec.v313.Bedrock_v313;
 import org.cloudburstmc.protocol.bedrock.codec.v332.Bedrock_v332;
@@ -137,7 +138,7 @@ public enum ProtocolVersion {
     MINECRAFT_PE_1_21_70(786, Bedrock_v786.CODEC),
     MINECRAFT_PE_1_21_80(800, Bedrock_v800.CODEC),
     MINECRAFT_PE_1_21_90(818, Bedrock_v818.CODEC),
-    MINECRAFT_PE_1_21_93(819, Bedrock_v819.CODEC),
+    MINECRAFT_PE_1_21_93(819, Bedrock_v819.CODEC, Bedrock_v819_NetEase.CODEC),
     MINECRAFT_PE_1_21_100(827, Bedrock_v827.CODEC),
     MINECRAFT_PE_1_21_110(843, 844, Bedrock_v844.CODEC),
     MINECRAFT_PE_1_21_111(844, Bedrock_v844.CODEC),
