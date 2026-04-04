@@ -51,8 +51,8 @@ public class WaterdogPE {
 
 
         int javaVersion = getJavaVersion();
-        if (javaVersion < 17) {
-            logger.error("Using unsupported Java version! Minimum supported version is Java 17, found Java " + javaVersion);
+        if (javaVersion < 21) {
+            logger.error("Using unsupported Java version! Minimum supported version is Java 21, found Java " + javaVersion);
             return;
         }
 
