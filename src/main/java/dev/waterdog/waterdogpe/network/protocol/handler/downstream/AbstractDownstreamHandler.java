@@ -31,11 +31,10 @@ import org.cloudburstmc.protocol.bedrock.data.command.CommandEnumConstraint;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandEnumData;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleNamedDefinition;
+import org.cloudburstmc.protocol.bedrock.definition.NamedDefinition;
+import org.cloudburstmc.protocol.bedrock.definition.SimpleDefinitionRegistry;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import org.cloudburstmc.protocol.bedrock.definition.NamedDefinition;
-import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
-import org.cloudburstmc.protocol.bedrock.definition.SimpleDefinitionRegistry;
 
 import java.util.*;
 import java.util.function.Consumer;
@@ -189,7 +188,9 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
                 player.getLogger().warning("[{}|{}] has duplicate item definition: {}", this.player.getName(), this.connection.getServerInfo().getServerName(), definition);
             }
         }
-        codecHelper.setItemDefinitions(itemRegistry.build());
+        var builtRegistry = itemRegistry.build();
+        codecHelper.setItemDefinitions(builtRegistry);
+        this.connection.getCodecHelper().setItemDefinitions(builtRegistry);
     }
 
     protected void setCameraPresetDefinitions(Collection<CameraPreset> presets) {
@@ -201,6 +202,8 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         for (CameraPreset preset : presets) {
             registry.add(new SimpleNamedDefinition(preset.getIdentifier(), id++));
         }
-        codecHelper.setCameraPresetDefinitions(registry.build());
+        var builtRegistry = registry.build();
+        codecHelper.setCameraPresetDefinitions(builtRegistry);
+        this.connection.getCodecHelper().setCameraPresetDefinitions(builtRegistry);
     }
 }

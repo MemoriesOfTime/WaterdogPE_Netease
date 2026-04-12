@@ -22,7 +22,6 @@ import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.registry.FakeDefinitionRegistry;
-import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.BlockMap;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.BlockMapSimple;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.BlockPalette;
@@ -30,9 +29,9 @@ import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
+import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.bedrock.util.EncryptionUtils;
-import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
 
 import javax.crypto.SecretKey;
 import java.net.URI;
@@ -135,7 +134,9 @@ public class InitialHandler extends AbstractDownstreamHandler {
             setItemDefinitions(packet.getItemDefinitions());
         }
         // Setup block registry
-        codecHelper.setBlockDefinitions(FakeDefinitionRegistry.createBlockRegistry());
+        var fakeBlockRegistry = FakeDefinitionRegistry.createBlockRegistry();
+        codecHelper.setBlockDefinitions(fakeBlockRegistry);
+        this.connection.getCodecHelper().setBlockDefinitions(fakeBlockRegistry);
         // Enable runtimeId rewrite
         this.player.setCanRewrite(true);
 
