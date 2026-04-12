@@ -24,6 +24,7 @@ import lombok.extern.log4j.Log4j2;
 import org.cloudburstmc.protocol.bedrock.PacketDirection;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
+import org.cloudburstmc.protocol.bedrock.codec.BedrockPacketDefinition;
 import org.cloudburstmc.protocol.bedrock.codec.compat.BedrockCompat;
 import org.cloudburstmc.protocol.bedrock.data.EncodingSettings;
 import org.cloudburstmc.protocol.bedrock.data.PacketRecipient;
@@ -56,6 +57,7 @@ public abstract class BedrockPacketCodec extends MessageToMessageCodec<BedrockBa
             this.alwaysDecode = true; // packets from client can be always decoded
         }
         this.inboundRecipient = direction.getInbound();
+        this.updateEncodingSettings();
     }
 
     @Override
@@ -105,7 +107,9 @@ public abstract class BedrockPacketCodec extends MessageToMessageCodec<BedrockBa
             this.codec.tryEncode(helper, buf, packet);
             wrapper.setPacketBuffer(buf.retain());
         } catch (Throwable t) {
-            log.error("Error encoding packet {}", wrapper.getPacket(), t);
+            log.error("Error encoding packet {} with codec protocol={} version={}",
+                    wrapper.getPacket(), this.codec.getProtocolVersion(), this.codec.getMinecraftVersion(), t);
+            throw new IllegalStateException("Failed to encode packet " + wrapper.getPacket(), t);
         } finally {
             buf.release();
         }
@@ -161,18 +165,30 @@ public abstract class BedrockPacketCodec extends MessageToMessageCodec<BedrockBa
         if (packet instanceof UnknownPacket) {
             return ((UnknownPacket) packet).getPacketId();
         }
-        return this.codec.getPacketDefinition(packet.getClass()).getId();
+        BedrockPacketDefinition<? extends BedrockPacket> definition = this.codec.getPacketDefinition(packet.getClass());
+        if (definition == null) {
+            throw new IllegalArgumentException("Packet " + packet.getClass().getSimpleName()
+                    + " is not registered in codec protocol=" + this.codec.getProtocolVersion()
+                    + " version=" + this.codec.getMinecraftVersion());
+        }
+        return definition.getId();
     }
 
     public final BedrockPacketCodec setCodecHelper(BedrockCodec codec, BedrockCodecHelper helper) {
         this.codec = requireNonNull(codec, "Codec cannot be null");
         this.helper = requireNonNull(helper, "Helper can not be null");
+        this.updateEncodingSettings();
+        return this;
+    }
 
+    private void updateEncodingSettings() {
+        if (this.inboundRecipient == null) {
+            return;
+        }
         switch (this.inboundRecipient) {
             case CLIENT -> this.helper.setEncodingSettings(EncodingSettings.UNLIMITED); // we trust downstream
             case SERVER -> this.helper.setEncodingSettings(EncodingSettings.SERVER);
         }
-        return this;
     }
 
     public BedrockPacketCodec setAlwaysDecode(boolean alwaysDecode) {

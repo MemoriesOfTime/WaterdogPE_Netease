@@ -305,7 +305,8 @@ public class ProxiedPlayer implements CommandSender {
         this.setPendingConnection(connection);
 
         var codec = this.isNetEaseClient() ? this.getProtocol().getNetEaseCodec() : this.getProtocol().getCodec();
-        connection.setCodecHelper(codec, this.connection.getPeer().getCodecHelper());
+        connection.setCodecHelper(codec,
+                ClientConnection.createCodecHelperSnapshot(codec, this.connection.getPeer().getCodecHelper()));
 
         BedrockPacketHandler handler;
         if (this.clientConnection == null) {

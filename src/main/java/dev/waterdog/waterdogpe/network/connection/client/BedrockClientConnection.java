@@ -238,7 +238,8 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
         return this.channel.pipeline().get(BedrockPacketCodec.class).getCodec();
     }
 
-    private BedrockCodecHelper getCodecHelper() {
+    @Override
+    public BedrockCodecHelper getCodecHelper() {
         return this.channel.pipeline().get(BedrockPacketCodec.class).getHelper();
     }
 

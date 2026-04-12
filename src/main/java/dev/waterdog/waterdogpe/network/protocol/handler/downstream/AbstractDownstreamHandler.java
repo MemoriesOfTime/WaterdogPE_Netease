@@ -18,10 +18,10 @@ package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 import dev.waterdog.waterdogpe.command.Command;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
+import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.handler.ProxyPacketHandler;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.RewriteMaps;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import dev.waterdog.waterdogpe.network.protocol.Signals;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
@@ -176,10 +176,12 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         return connection;
     }
 
+    protected void updateCodecHelpers(Consumer<BedrockCodecHelper> updateTask) {
+        updateTask.accept(this.player.getConnection().getPeer().getCodecHelper());
+        updateTask.accept(this.connection.getCodecHelper());
+    }
+
     protected void setItemDefinitions(Collection<ItemDefinition> definitions) {
-        BedrockCodecHelper codecHelper = this.player.getConnection()
-                .getPeer()
-                .getCodecHelper();
         SimpleDefinitionRegistry.Builder<ItemDefinition> itemRegistry = SimpleDefinitionRegistry.builder();
         IntSet runtimeIds = new IntOpenHashSet();
         for (ItemDefinition definition : definitions) {
@@ -189,18 +191,17 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
                 player.getLogger().warning("[{}|{}] has duplicate item definition: {}", this.player.getName(), this.connection.getServerInfo().getServerName(), definition);
             }
         }
-        codecHelper.setItemDefinitions(itemRegistry.build());
+        var registry = itemRegistry.build();
+        this.updateCodecHelpers(codecHelper -> codecHelper.setItemDefinitions(registry));
     }
 
     protected void setCameraPresetDefinitions(Collection<CameraPreset> presets) {
-        BedrockCodecHelper codecHelper = this.player.getConnection()
-                .getPeer()
-                .getCodecHelper();
         SimpleDefinitionRegistry.Builder<NamedDefinition> registry = SimpleDefinitionRegistry.builder();
         int id = 0;
         for (CameraPreset preset : presets) {
             registry.add(new SimpleNamedDefinition(preset.getIdentifier(), id++));
         }
-        codecHelper.setCameraPresetDefinitions(registry.build());
+        var definitions = registry.build();
+        this.updateCodecHelpers(codecHelper -> codecHelper.setCameraPresetDefinitions(definitions));
     }
 }

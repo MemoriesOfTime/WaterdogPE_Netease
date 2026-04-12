@@ -22,7 +22,9 @@ import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 public class ProtocolCodecs {
     
@@ -122,7 +124,8 @@ public class ProtocolCodecs {
     }
 
     private static final List<ProtocolCodecUpdater> UPDATERS = new ObjectArrayList<>();
-    private static final ProtocolCodecUpdater DEFAULT_UPDATER = (builder, codec) -> builder.retainPackets(HANDLED_PACKETS.toArray(new Class[]{}));
+    private static final ProtocolCodecUpdater DEFAULT_UPDATER = (builder, codec) ->
+            builder.retainPackets(getRetainedPackets(codec).toArray(new Class[]{}));
     static {
         UPDATERS.add(new CodecUpdater419());
     }
@@ -145,5 +148,16 @@ public class ProtocolCodecs {
             }
         }
         return builder.build();
+    }
+
+    private static Set<Class<? extends BedrockPacket>> getRetainedPackets(BedrockCodec codec) {
+        Set<Class<? extends BedrockPacket>> retainedPackets = new LinkedHashSet<>(HANDLED_PACKETS);
+        for (Class<? extends BedrockPacket> packetClass : HANDLED_PACKETS) {
+            var definition = codec.getPacketDefinition(packetClass);
+            if (definition != null) {
+                retainedPackets.add(definition.getFactory().get().getClass());
+            }
+        }
+        return retainedPackets;
     }
 }

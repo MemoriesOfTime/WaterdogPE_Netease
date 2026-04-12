@@ -25,6 +25,7 @@ import org.cloudburstmc.protocol.bedrock.data.CompressionAlgorithm;
 import org.cloudburstmc.protocol.bedrock.netty.codec.compression.CompressionStrategy;
 
 import javax.crypto.SecretKey;
+import java.util.Objects;
 
 public interface ClientConnection extends ProxiedConnection {
     String NAME = "client-connection";
@@ -34,6 +35,38 @@ public interface ClientConnection extends ProxiedConnection {
     ProxiedPlayer getPlayer();
 
     void setCodecHelper(BedrockCodec codec, BedrockCodecHelper helper);
+
+    BedrockCodecHelper getCodecHelper();
+
+    static BedrockCodecHelper createCodecHelperSnapshot(BedrockCodec codec, BedrockCodecHelper source) {
+        Objects.requireNonNull(codec, "codec");
+        Objects.requireNonNull(source, "source");
+
+        BedrockCodecHelper helper = codec.createHelper();
+        syncCodecHelperRegistries(source, helper);
+        return helper;
+    }
+
+    static void syncCodecHelperRegistries(BedrockCodecHelper source, BedrockCodecHelper target) {
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(target, "target");
+
+        if (source.getItemDefinitions() != null) {
+            target.setItemDefinitions(source.getItemDefinitions());
+        }
+        if (source.getBlockDefinitions() != null) {
+            target.setBlockDefinitions(source.getBlockDefinitions());
+        }
+
+        try {
+            var cameraPresetDefinitions = source.getCameraPresetDefinitions();
+            if (cameraPresetDefinitions != null) {
+                target.setCameraPresetDefinitions(cameraPresetDefinitions);
+            }
+        } catch (UnsupportedOperationException ignored) {
+            // Camera presets are only available on newer protocol helpers.
+        }
+    }
 
     default void enableEncryption(SecretKey secretKey) {
         // No encryption by default
