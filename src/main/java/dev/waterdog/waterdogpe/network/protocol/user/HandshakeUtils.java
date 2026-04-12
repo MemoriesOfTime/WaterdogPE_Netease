@@ -31,7 +31,7 @@ import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.utils.config.proxy.ProxyConfig;
 import lombok.Getter;
 import lombok.extern.log4j.Log4j2;
-import org.allaymc.protocol.extension.NetEaseEncryptionUtils;
+import org.cloudburstmc.protocol.bedrock.util.NetEaseEncryptionUtils;
 import org.cloudburstmc.protocol.bedrock.BedrockSession;
 import org.cloudburstmc.protocol.bedrock.data.auth.CertificateChainPayload;
 import org.cloudburstmc.protocol.bedrock.packet.LoginPacket;

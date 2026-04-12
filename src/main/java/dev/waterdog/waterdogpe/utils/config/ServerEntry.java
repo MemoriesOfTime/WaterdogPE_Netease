@@ -18,7 +18,7 @@ package dev.waterdog.waterdogpe.utils.config;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfoType;
 import lombok.Getter;
 import lombok.ToString;
-import org.cloudburstmc.protocol.common.util.Preconditions;
+import org.cloudburstmc.protocol.bedrock.util.Preconditions;
 
 import java.net.InetSocketAddress;
 

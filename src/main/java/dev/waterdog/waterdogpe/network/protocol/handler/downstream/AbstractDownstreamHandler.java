@@ -31,11 +31,10 @@ import org.cloudburstmc.protocol.bedrock.data.command.CommandEnumConstraint;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandEnumData;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleNamedDefinition;
+import org.cloudburstmc.protocol.bedrock.definition.NamedDefinition;
+import org.cloudburstmc.protocol.bedrock.definition.SimpleDefinitionRegistry;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import org.cloudburstmc.protocol.common.NamedDefinition;
-import org.cloudburstmc.protocol.common.PacketSignal;
-import org.cloudburstmc.protocol.common.SimpleDefinitionRegistry;
 
 import java.util.*;
 import java.util.function.Consumer;
@@ -53,7 +52,7 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
     }
 
     @Override
-    public PacketSignal handle(ItemComponentPacket packet) {
+    public PacketSignal handle(ItemRegistryPacket packet) {
         if (!this.player.acceptItemComponentPacket()) {
             return Signals.CANCEL;
         }
@@ -102,20 +101,20 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         ListIterator<CommandData> iterator = packet.getCommands().listIterator();
         while (iterator.hasNext()) {
             CommandData command = iterator.next();
-            if (command.getAliases() != null) {
+            if (command.aliases() != null) {
                 continue;
             }
 
             Map<String, Set<CommandEnumConstraint>> aliases = new LinkedHashMap<>();
-            aliases.put(command.getName(), EnumSet.of(CommandEnumConstraint.ALLOW_ALIASES));
+            aliases.put(command.name(), EnumSet.of(CommandEnumConstraint.ALLOW_ALIASES));
 
-            iterator.set(new CommandData(command.getName(),
-                    command.getDescription(),
-                    command.getFlags(),
-                    command.getPermission(),
-                    new CommandEnumData(command.getName() + "_aliases", aliases, false),
-                    Collections.emptyList(),
-                    command.getOverloads()));
+            iterator.set(new CommandData(command.name(),
+                    command.description(),
+                    command.flags(),
+                    command.permission(),
+                    new CommandEnumData(command.name() + "_aliases", aliases, false),
+                    command.overloads(),
+                    command.subcommands()));
         }
         return PacketSignal.HANDLED;
     }
@@ -176,32 +175,35 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         return connection;
     }
 
-    protected void updateCodecHelpers(Consumer<BedrockCodecHelper> updateTask) {
-        updateTask.accept(this.player.getConnection().getPeer().getCodecHelper());
-        updateTask.accept(this.connection.getCodecHelper());
-    }
-
     protected void setItemDefinitions(Collection<ItemDefinition> definitions) {
+        BedrockCodecHelper codecHelper = this.player.getConnection()
+                .getPeer()
+                .getCodecHelper();
         SimpleDefinitionRegistry.Builder<ItemDefinition> itemRegistry = SimpleDefinitionRegistry.builder();
         IntSet runtimeIds = new IntOpenHashSet();
         for (ItemDefinition definition : definitions) {
-            if (runtimeIds.add(definition.getRuntimeId())) {
+            if (runtimeIds.add(definition.runtimeId())) {
                 itemRegistry.add(definition);
             } else {
                 player.getLogger().warning("[{}|{}] has duplicate item definition: {}", this.player.getName(), this.connection.getServerInfo().getServerName(), definition);
             }
         }
-        var registry = itemRegistry.build();
-        this.updateCodecHelpers(codecHelper -> codecHelper.setItemDefinitions(registry));
+        var builtRegistry = itemRegistry.build();
+        codecHelper.setItemDefinitions(builtRegistry);
+        this.connection.getCodecHelper().setItemDefinitions(builtRegistry);
     }
 
     protected void setCameraPresetDefinitions(Collection<CameraPreset> presets) {
+        BedrockCodecHelper codecHelper = this.player.getConnection()
+                .getPeer()
+                .getCodecHelper();
         SimpleDefinitionRegistry.Builder<NamedDefinition> registry = SimpleDefinitionRegistry.builder();
         int id = 0;
         for (CameraPreset preset : presets) {
             registry.add(new SimpleNamedDefinition(preset.getIdentifier(), id++));
         }
-        var definitions = registry.build();
-        this.updateCodecHelpers(codecHelper -> codecHelper.setCameraPresetDefinitions(definitions));
+        var builtRegistry = registry.build();
+        codecHelper.setCameraPresetDefinitions(builtRegistry);
+        this.connection.getCodecHelper().setCameraPresetDefinitions(builtRegistry);
     }
 }

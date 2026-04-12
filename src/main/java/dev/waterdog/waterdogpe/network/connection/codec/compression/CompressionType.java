@@ -21,7 +21,7 @@ import lombok.Getter;
 import lombok.ToString;
 import org.cloudburstmc.protocol.bedrock.data.CompressionAlgorithm;
 import org.cloudburstmc.protocol.bedrock.data.PacketCompressionAlgorithm;
-import org.cloudburstmc.protocol.common.util.Preconditions;
+import org.cloudburstmc.protocol.bedrock.util.Preconditions;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListMap;
