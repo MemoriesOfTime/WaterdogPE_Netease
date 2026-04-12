@@ -47,7 +47,7 @@ import org.cloudburstmc.protocol.bedrock.data.ScoreInfo;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandOriginData;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandOriginType;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import org.cloudburstmc.protocol.common.util.Preconditions;
+import org.cloudburstmc.protocol.bedrock.util.Preconditions;
 
 import java.net.InetSocketAddress;
 import java.util.Collection;
@@ -383,7 +383,7 @@ public class ProxiedPlayer implements CommandSender {
         this.proxy.getEventManager().callEvent(event);
 
         if (this.connection != null && this.connection.isConnected()) {
-            this.connection.disconnect(reason);
+            this.connection.disconnect(reason == null ? null : reason.toString());
         }
 
         if (this.clientConnection != null) {

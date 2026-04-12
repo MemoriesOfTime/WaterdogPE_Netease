@@ -25,7 +25,7 @@ import io.netty.buffer.Unpooled;
 import lombok.Getter;
 import org.cloudburstmc.protocol.bedrock.data.ResourcePackType;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import org.cloudburstmc.protocol.common.util.Preconditions;
+import org.cloudburstmc.protocol.bedrock.util.Preconditions;
 
 import java.io.File;
 import java.io.IOException;
@@ -199,8 +199,8 @@ public class PackManager {
                     pack.getContentKey().isEmpty() ? "" : pack.getPackId().toString(), // contentId
                     false, // scripting
                     false,  // raytracingCapable
-                    isBehaviorPack, // addonPack
-                    null // cdnUrl
+                    null, // cdnUrl
+                    isBehaviorPack // addonPack
             );
             ResourcePackStackPacket.Entry stackEntry = new ResourcePackStackPacket.Entry(pack.getPackId().toString(), pack.getVersion().toString(), "");
             if (isBehaviorPack) {

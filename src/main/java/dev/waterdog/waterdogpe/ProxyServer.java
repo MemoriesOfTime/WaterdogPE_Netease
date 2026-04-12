@@ -66,7 +66,7 @@ import net.cubespace.Yamler.Config.InvalidConfigurationException;
 import org.cloudburstmc.netty.channel.raknet.RakChannelFactory;
 import org.cloudburstmc.netty.channel.raknet.config.RakChannelOption;
 import org.cloudburstmc.netty.channel.raknet.config.RakServerCookieMode;
-import org.cloudburstmc.protocol.common.util.Preconditions;
+import org.cloudburstmc.protocol.bedrock.util.Preconditions;
 
 import java.net.InetSocketAddress;
 import java.nio.file.Path;

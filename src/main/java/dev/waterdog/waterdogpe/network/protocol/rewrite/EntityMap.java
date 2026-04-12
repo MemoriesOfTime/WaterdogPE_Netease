@@ -25,7 +25,7 @@ import org.cloudburstmc.protocol.bedrock.packet.*;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
 import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import org.cloudburstmc.protocol.common.PacketSignal;
+import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -138,10 +138,10 @@ public class EntityMap implements BedrockPacketHandler {
         ListIterator<EntityLinkData> iterator = packet.getEntityLinks().listIterator();
         while (iterator.hasNext()) {
             EntityLinkData entityLink = iterator.next();
-            long from = PlayerRewriteUtils.rewriteId(entityLink.getFrom(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-            long to = PlayerRewriteUtils.rewriteId(entityLink.getTo(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-            if (entityLink.getFrom() != from || entityLink.getTo() != to) {
-                iterator.set(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated()));
+            long from = PlayerRewriteUtils.rewriteId(entityLink.from(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+            long to = PlayerRewriteUtils.rewriteId(entityLink.to(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+            if (entityLink.from() != from || entityLink.to() != to) {
+                iterator.set(new EntityLinkData(from, to, entityLink.type(), entityLink.immediate(), entityLink.riderInitiated(), entityLink.vehicleAngularVelocity()));
                 signal2 = PacketSignal.HANDLED;
             }
         }
@@ -161,10 +161,10 @@ public class EntityMap implements BedrockPacketHandler {
         ListIterator<EntityLinkData> iterator = packet.getEntityLinks().listIterator();
         while (iterator.hasNext()) {
             EntityLinkData entityLink = iterator.next();
-            long from = PlayerRewriteUtils.rewriteId(entityLink.getFrom(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-            long to = PlayerRewriteUtils.rewriteId(entityLink.getTo(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-            if (entityLink.getFrom() != from || entityLink.getTo() != to) {
-                iterator.set(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated()));
+            long from = PlayerRewriteUtils.rewriteId(entityLink.from(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+            long to = PlayerRewriteUtils.rewriteId(entityLink.to(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+            if (entityLink.from() != from || entityLink.to() != to) {
+                iterator.set(new EntityLinkData(from, to, entityLink.type(), entityLink.immediate(), entityLink.riderInitiated(), entityLink.vehicleAngularVelocity()));
                 signal2 = PacketSignal.HANDLED;
             }
         }
@@ -229,11 +229,11 @@ public class EntityMap implements BedrockPacketHandler {
     @Override
     public PacketSignal handle(SetEntityLinkPacket packet) {
         EntityLinkData entityLink = packet.getEntityLink();
-        long from = PlayerRewriteUtils.rewriteId(entityLink.getFrom(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-        long to = PlayerRewriteUtils.rewriteId(entityLink.getTo(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+        long from = PlayerRewriteUtils.rewriteId(entityLink.from(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+        long to = PlayerRewriteUtils.rewriteId(entityLink.to(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
 
-        if (from != entityLink.getFrom() || to != entityLink.getTo()) {
-            packet.setEntityLink(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated()));
+        if (from != entityLink.from() || to != entityLink.to()) {
+            packet.setEntityLink(new EntityLinkData(from, to, entityLink.type(), entityLink.immediate(), entityLink.riderInitiated(), entityLink.vehicleAngularVelocity()));
             return PacketSignal.HANDLED;
         }
         return PacketSignal.UNHANDLED;

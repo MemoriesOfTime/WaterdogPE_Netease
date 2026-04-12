@@ -22,6 +22,7 @@ import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.registry.FakeDefinitionRegistry;
+import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.BlockMap;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.BlockMapSimple;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.BlockPalette;
@@ -31,7 +32,7 @@ import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.bedrock.util.EncryptionUtils;
-import org.cloudburstmc.protocol.common.PacketSignal;
+import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
 
 import javax.crypto.SecretKey;
 import java.net.URI;
@@ -126,13 +127,15 @@ public class InitialHandler extends AbstractDownstreamHandler {
             this.player.getRewriteMaps().setBlockMap(new BlockMapSimple(this.player));
         }
 
+        BedrockCodecHelper codecHelper = this.player.getConnection()
+                .getPeer()
+                .getCodecHelper();
         // Setup item registry. After 1.21.60 these are sent with ItemComponentPacket instead.
         if (this.player.getProtocol().isBeforeOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_50)) {
             setItemDefinitions(packet.getItemDefinitions());
         }
         // Setup block registry
-        var blockDefinitions = FakeDefinitionRegistry.createBlockRegistry();
-        this.updateCodecHelpers(codecHelper -> codecHelper.setBlockDefinitions(blockDefinitions));
+        codecHelper.setBlockDefinitions(FakeDefinitionRegistry.createBlockRegistry());
         // Enable runtimeId rewrite
         this.player.setCanRewrite(true);
 

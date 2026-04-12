@@ -108,7 +108,7 @@ public class NetEasePackFilter {
         List<ResourcePackStackPacket.Entry> filtered = new ArrayList<>();
         for (ResourcePackStackPacket.Entry entry : entries) {
             try {
-                UUID packId = UUID.fromString(entry.getPackId());
+                UUID packId = UUID.fromString(entry.packId());
                 ResourcePack pack = packManager.getPacks().get(packId);
                 if (pack == null || pack.getSupportType().isCompatibleWith(isNetEaseClient)) {
                     filtered.add(entry);

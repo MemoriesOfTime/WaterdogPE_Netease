@@ -32,7 +32,7 @@ import org.cloudburstmc.protocol.bedrock.netty.BedrockPacketWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
 import org.cloudburstmc.protocol.bedrock.packet.DisconnectPacket;
-import org.cloudburstmc.protocol.common.PacketSignal;
+import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
 
 import java.util.function.Consumer;
 
@@ -77,7 +77,7 @@ public class BedrockServerSession extends BedrockSession implements ProxiedConne
     }
 
     @Override
-    public void disconnect(CharSequence reason, boolean hideReason) {
+    public void disconnect(String reason, boolean hideReason) {
         this.checkForClosed();
 
         DisconnectPacket packet = new DisconnectPacket();
