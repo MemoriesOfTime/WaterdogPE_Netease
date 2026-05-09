@@ -17,6 +17,13 @@ package dev.waterdog.waterdogpe.network.protocol.rewrite;
 
 import it.unimi.dsi.fastutil.longs.LongListIterator;
 import org.cloudburstmc.protocol.bedrock.data.camera.CameraAttachToEntityInstruction;
+import org.cloudburstmc.protocol.bedrock.data.debugshape.DebugArrow;
+import org.cloudburstmc.protocol.bedrock.data.debugshape.DebugBox;
+import org.cloudburstmc.protocol.bedrock.data.debugshape.DebugCircle;
+import org.cloudburstmc.protocol.bedrock.data.debugshape.DebugLine;
+import org.cloudburstmc.protocol.bedrock.data.debugshape.DebugShape;
+import org.cloudburstmc.protocol.bedrock.data.debugshape.DebugSphere;
+import org.cloudburstmc.protocol.bedrock.data.debugshape.DebugText;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataMap;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataType;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
@@ -372,6 +379,74 @@ public class EntityMap implements BedrockPacketHandler {
             signal = mergeSignals(signal, returnedSignal);
         }
         return signal;
+    }
+
+    @Override
+    public PacketSignal handle(DebugDrawerPacket packet) {
+        PacketSignal signal = PacketSignal.UNHANDLED;
+        ListIterator<DebugShape> iterator = packet.getShapes().listIterator();
+        while (iterator.hasNext()) {
+            DebugShape shape = iterator.next();
+            Long attachedEntityId = shape.getAttachedToEntityId();
+            if (attachedEntityId != null) {
+                PacketSignal returnedSignal = rewriteDebugShapeAttachedEntityId(iterator, shape, attachedEntityId);
+                signal = mergeSignals(signal, returnedSignal);
+            }
+        }
+        return signal;
+    }
+
+    private PacketSignal rewriteDebugShapeAttachedEntityId(ListIterator<DebugShape> iterator, DebugShape shape, long attachedEntityId) {
+        long rewriteId = PlayerRewriteUtils.rewriteId(attachedEntityId, this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+        if (rewriteId == attachedEntityId) {
+            return PacketSignal.UNHANDLED;
+        }
+
+        iterator.set(copyDebugShape(shape, rewriteId));
+        return PacketSignal.HANDLED;
+    }
+
+    private static DebugShape copyDebugShape(DebugShape shape, Long attachedToEntityId) {
+        DebugShape.Type type = shape.getType();
+        if (type == null) {
+            return new DebugShape(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
+                    shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), attachedToEntityId);
+        }
+
+        return switch (type) {
+            case ARROW -> {
+                DebugArrow arrow = (DebugArrow) shape;
+                yield new DebugArrow(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
+                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), arrow.getArrowEndPosition(),
+                        arrow.getArrowHeadLength(), arrow.getArrowHeadRadius(), arrow.getArrowHeadSegments(), attachedToEntityId);
+            }
+            case BOX -> {
+                DebugBox box = (DebugBox) shape;
+                yield new DebugBox(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
+                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), box.getBoxBounds(), attachedToEntityId);
+            }
+            case CIRCLE -> {
+                DebugCircle circle = (DebugCircle) shape;
+                yield new DebugCircle(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
+                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), circle.getSegments(), attachedToEntityId);
+            }
+            case LINE -> {
+                DebugLine line = (DebugLine) shape;
+                yield new DebugLine(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
+                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), line.getLineEndPosition(), attachedToEntityId);
+            }
+            case SPHERE -> {
+                DebugSphere sphere = (DebugSphere) shape;
+                yield new DebugSphere(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
+                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), sphere.getSegments(), attachedToEntityId);
+            }
+            case TEXT -> {
+                DebugText text = (DebugText) shape;
+                yield new DebugText(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
+                        shape.getTotalTimeLeft(), shape.getColor(), text.getText(), text.isUseRotation(), text.getBackgroundColor(),
+                        text.isDepthTest(), text.isShowBackface(), text.isShowTextBackface(), shape.getMaximumRenderDistance(), attachedToEntityId);
+            }
+        };
     }
 
     private PacketSignal rewriteMetadata(EntityDataMap metadata) {

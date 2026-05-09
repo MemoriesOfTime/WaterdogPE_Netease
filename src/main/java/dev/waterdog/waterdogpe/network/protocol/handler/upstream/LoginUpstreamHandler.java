@@ -247,6 +247,13 @@ public class LoginUpstreamHandler implements BedrockPacketHandler {
     }
 
     private void finishConnection() {
+        if (this.player == null) {
+            this.proxy.getLogger().warning("[{}] <-> Upstream has not sent LoginPacket", this.session.getSocketAddress());
+            this.session.disconnect("Wrong login flow");
+            this.proxy.getSecurityManager().onConnectionError(this.session.getSocketAddress(), null);
+            return;
+        }
+
         PlayStatusPacket status = new PlayStatusPacket();
         status.setStatus(PlayStatusPacket.Status.LOGIN_SUCCESS);
         this.session.sendPacket(status);
