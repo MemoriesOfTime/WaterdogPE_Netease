@@ -20,10 +20,6 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
-import org.cloudburstmc.protocol.bedrock.codec.v630_netease.Bedrock_v630_NetEase;
-import org.cloudburstmc.protocol.bedrock.codec.v686_netease.Bedrock_v686_NetEase;
-import org.cloudburstmc.protocol.bedrock.codec.v766_netease.Bedrock_v766_NetEase;
-import org.cloudburstmc.protocol.bedrock.codec.v819_netease.Bedrock_v819_NetEase;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
 import org.cloudburstmc.protocol.bedrock.codec.v313.Bedrock_v313;
 import org.cloudburstmc.protocol.bedrock.codec.v332.Bedrock_v332;
@@ -62,20 +58,24 @@ import org.cloudburstmc.protocol.bedrock.codec.v594.Bedrock_v594;
 import org.cloudburstmc.protocol.bedrock.codec.v618.Bedrock_v618;
 import org.cloudburstmc.protocol.bedrock.codec.v622.Bedrock_v622;
 import org.cloudburstmc.protocol.bedrock.codec.v630.Bedrock_v630;
+import org.cloudburstmc.protocol.bedrock.codec.v630_netease.Bedrock_v630_NetEase;
 import org.cloudburstmc.protocol.bedrock.codec.v649.Bedrock_v649;
 import org.cloudburstmc.protocol.bedrock.codec.v662.Bedrock_v662;
 import org.cloudburstmc.protocol.bedrock.codec.v671.Bedrock_v671;
 import org.cloudburstmc.protocol.bedrock.codec.v685.Bedrock_v685;
 import org.cloudburstmc.protocol.bedrock.codec.v686.Bedrock_v686;
+import org.cloudburstmc.protocol.bedrock.codec.v686_netease.Bedrock_v686_NetEase;
 import org.cloudburstmc.protocol.bedrock.codec.v712.Bedrock_v712;
 import org.cloudburstmc.protocol.bedrock.codec.v729.Bedrock_v729;
 import org.cloudburstmc.protocol.bedrock.codec.v748.Bedrock_v748;
 import org.cloudburstmc.protocol.bedrock.codec.v766.Bedrock_v766;
+import org.cloudburstmc.protocol.bedrock.codec.v766_netease.Bedrock_v766_NetEase;
 import org.cloudburstmc.protocol.bedrock.codec.v776.Bedrock_v776;
 import org.cloudburstmc.protocol.bedrock.codec.v786.Bedrock_v786;
 import org.cloudburstmc.protocol.bedrock.codec.v800.Bedrock_v800;
 import org.cloudburstmc.protocol.bedrock.codec.v818.Bedrock_v818;
 import org.cloudburstmc.protocol.bedrock.codec.v819.Bedrock_v819;
+import org.cloudburstmc.protocol.bedrock.codec.v819_netease.Bedrock_v819_NetEase;
 import org.cloudburstmc.protocol.bedrock.codec.v827.Bedrock_v827;
 import org.cloudburstmc.protocol.bedrock.codec.v844.Bedrock_v844;
 import org.cloudburstmc.protocol.bedrock.codec.v859.Bedrock_v859;
@@ -83,7 +83,7 @@ import org.cloudburstmc.protocol.bedrock.codec.v860.Bedrock_v860;
 import org.cloudburstmc.protocol.bedrock.codec.v898.Bedrock_v898;
 import org.cloudburstmc.protocol.bedrock.codec.v924.Bedrock_v924;
 import org.cloudburstmc.protocol.bedrock.codec.v944.Bedrock_v944;
-import org.cloudburstmc.protocol.bedrock.codec.v974.Bedrock_v974;
+import org.cloudburstmc.protocol.bedrock.codec.v975.Bedrock_v975;
 
 @ToString(exclude = {"defaultCodec", "bedrockCodec"})
 public enum ProtocolVersion {
@@ -149,7 +149,7 @@ public enum ProtocolVersion {
     MINECRAFT_PE_1_21_130(898, Bedrock_v898.CODEC),
     MINECRAFT_PE_1_26_0(924, Bedrock_v924.CODEC),
     MINECRAFT_PE_1_26_10(944, Bedrock_v944.CODEC),
-    MINECRAFT_PE_1_26_20(974, Bedrock_v974.CODEC),
+    MINECRAFT_PE_1_26_20(975, Bedrock_v975.CODEC),
     ;
 
     private static final ProtocolVersion[] VALUES = values();
