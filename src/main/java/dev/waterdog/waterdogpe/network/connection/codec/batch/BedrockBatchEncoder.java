@@ -21,7 +21,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToMessageEncoder;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockPacketWrapper;
-import org.cloudburstmc.protocol.common.util.VarInts;
+import org.cloudburstmc.protocol.bedrock.util.VarInts;
 
 import java.util.List;
 

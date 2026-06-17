@@ -15,11 +15,12 @@
 
 package dev.waterdog.waterdogpe.network.protocol.handler.upstream;
 
-import org.cloudburstmc.protocol.bedrock.packet.*;
 import dev.waterdog.waterdogpe.event.defaults.PlayerResourcePackApplyEvent;
+import dev.waterdog.waterdogpe.packs.NetEasePackFilter;
 import dev.waterdog.waterdogpe.packs.PackManager;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import org.cloudburstmc.protocol.common.PacketSignal;
+import org.cloudburstmc.protocol.bedrock.packet.*;
+import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
 
 import java.util.LinkedList;
 import java.util.Queue;
@@ -46,7 +47,7 @@ public class ResourcePacksHandler extends AbstractUpstreamHandler {
                 break;
             case SEND_PACKS:
                 for (String packIdVer : packet.getPackIds()) {
-                    ResourcePackDataInfoPacket response = packManager.packInfoFromIdVer(packIdVer, this.player);
+                    ResourcePackDataInfoPacket response = packManager.packInfoFromIdVer(packIdVer);
                     if (response == null) {
                         this.player.disconnect("disconnectionScreen.resourcePack");
                         break;
@@ -56,8 +57,13 @@ public class ResourcePacksHandler extends AbstractUpstreamHandler {
                 this.sendNextPacket();
                 break;
             case HAVE_ALL_PACKS:
-                PlayerResourcePackApplyEvent event = new PlayerResourcePackApplyEvent(this.player, packManager.getStackPacket());
+                // buildStackPacket handles protocol-version merge (behavior→resource for v898+)
+                ResourcePackStackPacket stackPkt = packManager.buildStackPacket(this.player.getProtocol());
+                PlayerResourcePackApplyEvent event = new PlayerResourcePackApplyEvent(this.player, stackPkt);
                 this.player.getProxy().getEventManager().callEvent(event);
+
+                // Filter stack based on client type after plugin event
+                NetEasePackFilter.filterStackForClient(event);
                 this.player.getConnection().sendPacket(event.getStackPacket());
                 break;
             case COMPLETED:

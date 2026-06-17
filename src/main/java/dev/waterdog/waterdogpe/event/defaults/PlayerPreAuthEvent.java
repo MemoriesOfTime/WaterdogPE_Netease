@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 WaterdogTEAM
+ * Copyright 2026 WaterdogTEAM
  * Licensed under the GNU General Public License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -17,39 +17,39 @@ package dev.waterdog.waterdogpe.event.defaults;
 
 import com.google.gson.JsonObject;
 import dev.waterdog.waterdogpe.event.Event;
-import dev.waterdog.waterdogpe.network.connection.ProxiedConnection;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.security.KeyPair;
+import java.net.SocketAddress;
 import java.util.UUID;
 
 /**
- * Called right when we decoded the player's LoginPacket data in the handshake(HandshakeUpstreamHandler).
- * Can be used to modify or filter (for) certain data, for example skin data.
+ * Fired after chain validation but before Xbox authentication check during login.
+ * Plugins can override the authentication result by calling {@link #setAuthenticated(boolean)}.
+ * If setAuthenticated(true), Xbox auth check is skipped for this player.
  */
-public class PreClientDataSetEvent extends Event {
+@Getter
+public class PlayerPreAuthEvent extends Event {
 
-    @Getter
-    private final ProxiedConnection connection;
-    @Getter
     private final JsonObject clientData;
-    @Getter
     private final String xuid;
-    @Getter
     private final UUID uuid;
-    @Getter
     private final String displayName;
-    @Getter
-    @Setter
-    private KeyPair keyPair;
+    private final SocketAddress address;
 
-    public PreClientDataSetEvent(JsonObject clientData, String xuid, UUID uuid, String displayName, KeyPair keyPair, ProxiedConnection playerSession) {
+    @Setter
+    private boolean authenticated;
+
+    @Setter
+    private String kickMessage = "disconnectionScreen.notAuthenticated";
+
+    public PlayerPreAuthEvent(JsonObject clientData, String xuid, UUID uuid,
+                              String displayName, SocketAddress address, boolean authenticated) {
         this.clientData = clientData;
         this.xuid = xuid;
         this.uuid = uuid;
         this.displayName = displayName;
-        this.connection = playerSession;
-        this.keyPair = keyPair;
+        this.address = address;
+        this.authenticated = authenticated;
     }
 }

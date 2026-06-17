@@ -18,6 +18,9 @@ package dev.waterdog.waterdogpe.security;
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.network.protocol.user.HandshakeEntry;
 import dev.waterdog.waterdogpe.utils.config.proxy.NetworkSettings;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.extern.log4j.Log4j2;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -27,13 +30,18 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
+@Log4j2
 public class SecurityManager {
     private final ProxyServer proxy;
+    @Getter
     private final ConnectionThrottle connectionThrottle;
+    @Getter
     private final ConnectionThrottle loginThrottle;
 
     private final Map<InetAddress, Long> blockedConnections = new ConcurrentHashMap<>();
 
+    @Getter
+    @Setter
     private SecurityListener listener;
 
     public SecurityManager(ProxyServer proxy) {
@@ -117,19 +125,18 @@ public class SecurityManager {
         return reason;
     }
 
-    public void setListener(SecurityListener listener) {
-        this.listener = listener;
-    }
+    public void onConnectionError(SocketAddress address, Throwable cause) {
+        if (cause != null) {
+            log.error("{} Exception caught in bedrock connection", address, cause);
+        }
 
-    public SecurityListener getListener() {
-        return this.listener;
-    }
+        int timeout = this.proxy.getNetworkSettings().errorTimeout();
+        if (timeout == 0) {
+            return;
+        }
 
-    public ConnectionThrottle getConnectionThrottle() {
-        return this.connectionThrottle;
-    }
-
-    public ConnectionThrottle getLoginThrottle() {
-        return this.loginThrottle;
+        if (address instanceof InetSocketAddress inet) {
+            this.proxy.getSecurityManager().blockAddress(inet.getAddress(), timeout, TimeUnit.SECONDS);
+        }
     }
 }

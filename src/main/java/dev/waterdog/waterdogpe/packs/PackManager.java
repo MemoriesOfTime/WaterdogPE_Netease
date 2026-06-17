@@ -15,17 +15,17 @@
 
 package dev.waterdog.waterdogpe.packs;
 
-import io.netty.buffer.Unpooled;
-import org.cloudburstmc.protocol.bedrock.data.ResourcePackType;
-import org.cloudburstmc.protocol.bedrock.packet.*;
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.event.defaults.ResourcePacksRebuildEvent;
-import dev.waterdog.waterdogpe.network.netease.NetEaseUtils;
+import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.packs.types.ResourcePack;
 import dev.waterdog.waterdogpe.packs.types.ZipResourcePack;
-import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import dev.waterdog.waterdogpe.utils.FileUtils;
-import org.cloudburstmc.protocol.common.util.Preconditions;
+import io.netty.buffer.Unpooled;
+import lombok.Getter;
+import org.cloudburstmc.protocol.bedrock.data.ResourcePackType;
+import org.cloudburstmc.protocol.bedrock.packet.*;
+import org.cloudburstmc.protocol.bedrock.util.Preconditions;
 
 import java.io.File;
 import java.io.IOException;
@@ -43,10 +43,14 @@ public class PackManager {
     private static final ResourcePackStackPacket.Entry EDU_PACK = new ResourcePackStackPacket.Entry("0fba4063-dba1-4281-9b89-ff9390653530", "1.0.0", "");
 
     private final ProxyServer proxy;
+    @Getter
     private final Map<UUID, ResourcePack> packs = new HashMap<>();
+    @Getter
     private final Map<String, ResourcePack> packsByIdVer = new HashMap<>();
 
+    @Getter
     private final ResourcePacksInfoPacket packsInfoPacket = new ResourcePacksInfoPacket();
+    @Getter
     private final ResourcePackStackPacket stackPacket = new ResourcePackStackPacket();
 
     public PackManager(ProxyServer proxy) {
@@ -100,6 +104,8 @@ public class PackManager {
             return null;
         }
 
+        pack.setSupportType(this.detectPackSupportType(pack));
+
         File contentKeyFile = new File(packPath.getParent().toFile(), packPath.toFile().getName() + ".key");
         pack.setContentKey(contentKeyFile.exists() ? Files.readString(contentKeyFile.toPath(), StandardCharsets.UTF_8).replace("\n", "") : "");
 
@@ -107,6 +113,19 @@ public class PackManager {
             pack.saveToCache();
         }
         return pack;
+    }
+
+    /**
+     * Determine the SupportType of a resource pack based on its module type.
+     * TYPE_DATA ("data") and TYPE_BEHAVIOR ("behavior") are behavior pack types which should not be sent to vanilla (Microsoft) clients.
+     */
+    private ResourcePack.SupportType detectPackSupportType(ResourcePack pack) {
+        String packType = pack.getType();
+        if (ResourcePack.TYPE_DATA.equals(packType) || ResourcePack.TYPE_BEHAVIOR.equals(packType)) {
+            this.proxy.getLogger().info("Detected behavior pack (type=" + packType + ", NetEase only): " + pack.getPackPath().getFileName());
+            return ResourcePack.SupportType.NETEASE;
+        }
+        return ResourcePack.SupportType.UNIVERSAL;
     }
 
     /**
@@ -163,18 +182,37 @@ public class PackManager {
 
         this.stackPacket.setGameVersion("");
 
+        boolean hasAddonPacks = false;
         for (ResourcePack pack : this.packs.values()) {
-            ResourcePacksInfoPacket.Entry infoEntry = new ResourcePacksInfoPacket.Entry(pack.getPackId(), pack.getVersion().toString(),
-                    pack.getPackSize(), pack.getContentKey(), "", pack.getContentKey().equals("") ? "" : pack.getPackId().toString(), false, false, false, null);
+            String packType = pack.getType();
+            boolean isBehaviorPack = ResourcePack.TYPE_DATA.equals(packType) || ResourcePack.TYPE_BEHAVIOR.equals(packType);
+            if (isBehaviorPack) {
+                hasAddonPacks = true;
+            }
+
+            ResourcePacksInfoPacket.Entry infoEntry = new ResourcePacksInfoPacket.Entry(
+                    pack.getPackId(),
+                    pack.getVersion().toString(),
+                    pack.getPackSize(),
+                    pack.getContentKey(),
+                    "", // subPackName
+                    pack.getContentKey().isEmpty() ? "" : pack.getPackId().toString(), // contentId
+                    false, // scripting
+                    false,  // raytracingCapable
+                    null, // cdnUrl
+                    isBehaviorPack // addonPack
+            );
             ResourcePackStackPacket.Entry stackEntry = new ResourcePackStackPacket.Entry(pack.getPackId().toString(), pack.getVersion().toString(), "");
-            if (pack.getType().equals(ResourcePack.TYPE_RESOURCES)) {
-                this.packsInfoPacket.getResourcePackInfos().add(infoEntry);
-                this.stackPacket.getResourcePacks().add(stackEntry);
-            } else if (pack.getType().equals(ResourcePack.TYPE_DATA)) {
+            if (isBehaviorPack) {
                 this.packsInfoPacket.getBehaviorPackInfos().add(infoEntry);
                 this.stackPacket.getBehaviorPacks().add(stackEntry);
+            } else {
+                this.packsInfoPacket.getResourcePackInfos().add(infoEntry);
+                this.stackPacket.getResourcePacks().add(stackEntry);
             }
         }
+        // Set hasAddonPacks flag (since v662 1.20.70)
+        this.packsInfoPacket.setHasAddonPacks(hasAddonPacks);
 
         if (this.proxy.getConfiguration().enableEducationFeatures()) {
             this.stackPacket.getBehaviorPacks().add(EDU_PACK);
@@ -183,7 +221,53 @@ public class PackManager {
         this.proxy.getEventManager().callEvent(event);
     }
 
-    public ResourcePackDataInfoPacket packInfoFromIdVer(String idVersion, ProxiedPlayer player) {
+    /**
+     * Build protocol-version-aware ResourcePacksInfoPacket.
+     * v729+: behaviorPackInfos is no longer serialized, merge behavior packs into resourcePackInfos.
+     */
+    public ResourcePacksInfoPacket buildPacksInfoPacket(ProtocolVersion protocol) {
+        ResourcePacksInfoPacket packet = new ResourcePacksInfoPacket();
+        packet.setForcedToAccept(this.packsInfoPacket.isForcedToAccept());
+        packet.setWorldTemplateId(this.packsInfoPacket.getWorldTemplateId());
+        packet.setWorldTemplateVersion(this.packsInfoPacket.getWorldTemplateVersion());
+        packet.setHasAddonPacks(this.packsInfoPacket.isHasAddonPacks());
+        packet.setScriptingEnabled(this.packsInfoPacket.isScriptingEnabled());
+        packet.setForcingServerPacksEnabled(this.packsInfoPacket.isForcingServerPacksEnabled());
+
+        if (protocol.isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_30)) {
+            // v729+: merge behavior packs into resource pack list
+            packet.getResourcePackInfos().addAll(this.packsInfoPacket.getResourcePackInfos());
+            packet.getResourcePackInfos().addAll(this.packsInfoPacket.getBehaviorPackInfos());
+        } else {
+            packet.getResourcePackInfos().addAll(this.packsInfoPacket.getResourcePackInfos());
+            packet.getBehaviorPackInfos().addAll(this.packsInfoPacket.getBehaviorPackInfos());
+        }
+        return packet;
+    }
+
+    /**
+     * Build protocol-version-aware ResourcePackStackPacket.
+     * v898+: behaviorPacks is no longer serialized, merge behavior packs into resourcePacks.
+     */
+    public ResourcePackStackPacket buildStackPacket(ProtocolVersion protocol) {
+        ResourcePackStackPacket packet = new ResourcePackStackPacket();
+        packet.setForcedToAccept(this.stackPacket.isForcedToAccept());
+        packet.setGameVersion(this.stackPacket.getGameVersion());
+        packet.getExperiments().addAll(this.stackPacket.getExperiments());
+        packet.setExperimentsPreviouslyToggled(this.stackPacket.isExperimentsPreviouslyToggled());
+
+        if (protocol.isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_130)) {
+            // v898+: merge behavior packs into resource pack list
+            packet.getResourcePacks().addAll(this.stackPacket.getResourcePacks());
+            packet.getResourcePacks().addAll(this.stackPacket.getBehaviorPacks());
+        } else {
+            packet.getResourcePacks().addAll(this.stackPacket.getResourcePacks());
+            packet.getBehaviorPacks().addAll(this.stackPacket.getBehaviorPacks());
+        }
+        return packet;
+    }
+
+    public ResourcePackDataInfoPacket packInfoFromIdVer(String idVersion) {
         ResourcePack resourcePack = this.packsByIdVer.get(idVersion);
         if (resourcePack == null) {
             return null;
@@ -196,16 +280,14 @@ public class PackManager {
         packet.setChunkCount((resourcePack.getPackSize() - 1) / packet.getMaxChunkSize() + 1);
         packet.setCompressedPackSize(resourcePack.getPackSize());
         packet.setHash(resourcePack.getHash());
-        if (resourcePack.getType().equals(ResourcePack.TYPE_RESOURCES)) {
-            packet.setType(ResourcePackType.RESOURCES);
-        } else if (resourcePack.getType().equals(ResourcePack.TYPE_DATA)) {
-            var protocol = player.getProtocol().getProtocol();
-            var raknetVersion = player.getConnection().getPeer().getRakVersion();
-            if (NetEaseUtils.isNetEaseClient(raknetVersion, protocol)) {
-                packet.setType(ResourcePackType.DATA_ADD_ON);
-            } else {
-                packet.setType(ResourcePackType.ADDON);
-            }
+
+        String packType = resourcePack.getType();
+        if (ResourcePack.TYPE_RESOURCES.equals(packType)) {
+            packet.setType(ResourcePackType.RESOURCES);   // wire 6
+        } else if (ResourcePack.TYPE_DATA.equals(packType) || ResourcePack.TYPE_BEHAVIOR.equals(packType)) {
+            packet.setType(ResourcePackType.DATA_ADD_ON); // wire 4
+        } else {
+            packet.setType(ResourcePackType.RESOURCES);   // fallback
         }
         return packet;
     }
@@ -225,19 +307,4 @@ public class PackManager {
         return packet;
     }
 
-    public ResourcePacksInfoPacket getPacksInfoPacket() {
-        return this.packsInfoPacket;
-    }
-
-    public ResourcePackStackPacket getStackPacket() {
-        return this.stackPacket;
-    }
-
-    public Map<UUID, ResourcePack> getPacks() {
-        return this.packs;
-    }
-
-    public Map<String, ResourcePack> getPacksByIdVer() {
-        return this.packsByIdVer;
-    }
 }

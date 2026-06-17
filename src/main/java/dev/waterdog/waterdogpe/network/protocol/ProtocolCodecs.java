@@ -100,7 +100,7 @@ public class ProtocolCodecs {
         HANDLED_PACKETS.add(DebugInfoPacket.class);
         HANDLED_PACKETS.add(PacketViolationWarningPacket.class);
         HANDLED_PACKETS.add(AnimateEntityPacket.class);
-        HANDLED_PACKETS.add(ItemComponentPacket.class);
+        HANDLED_PACKETS.add(ItemRegistryPacket.class);
         HANDLED_PACKETS.add(NpcDialoguePacket.class);
         HANDLED_PACKETS.add(BiomeDefinitionListPacket.class);
         HANDLED_PACKETS.add(ChangeMobPropertyPacket.class);

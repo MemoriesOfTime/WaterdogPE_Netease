@@ -21,7 +21,7 @@ import dev.waterdog.waterdogpe.network.protocol.Signals;
 import org.cloudburstmc.protocol.bedrock.PacketDirection;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import org.cloudburstmc.protocol.common.PacketSignal;
+import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
 
 import static dev.waterdog.waterdogpe.network.protocol.Signals.mergeSignals;
 
@@ -36,7 +36,7 @@ public abstract class AbstractUpstreamHandler implements BedrockPacketHandler {
     @Override
     public PacketSignal handlePacket(BedrockPacket packet) {
         PacketSignal signal = BedrockPacketHandler.super.handlePacket(packet);
-        if (player.getPluginPacketHandlers().size() > 0) {
+        if (!player.getPluginPacketHandlers().isEmpty()) {
             for (PluginPacketHandler handler : this.player.getPluginPacketHandlers()) {
                 signal = mergeSignals(signal, handler.handlePacket(packet, PacketDirection.SERVER_BOUND));
             }

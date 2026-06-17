@@ -33,7 +33,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.LongSet;
-import org.cloudburstmc.protocol.common.util.VarInts;
+import org.cloudburstmc.protocol.bedrock.util.VarInts;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -191,7 +191,7 @@ public class PlayerRewriteUtils {
     }
 
     public static void injectRemoveAllPlayers(ProxiedConnection session, Collection<UUID> playerList) {
-        if (session == null || !session.isConnected()) {
+        if (session == null || !session.isConnected() || playerList == null || playerList.isEmpty()) {
             return;
         }
         PlayerListPacket packet = new PlayerListPacket();
@@ -239,7 +239,7 @@ public class PlayerRewriteUtils {
     }
 
     public static void injectRemoveScoreInfos(ProxiedConnection session, Long2ObjectMap<ScoreInfo> scoreInfos) {
-        if (session == null || !session.isConnected()) {
+        if (session == null || !session.isConnected() || scoreInfos == null || scoreInfos.isEmpty()) {
             return;
         }
         SetScorePacket packet = new SetScorePacket();
@@ -310,7 +310,7 @@ public class PlayerRewriteUtils {
         }
 
         BedrockBatchWrapper wrapper = BedrockBatchWrapper.create(session.getSubClientId(), packets.toArray(new BedrockPacket[0]));
-        wrapper.setFlag(BatchFlags.SKIP_QUEUE);;
+        wrapper.setFlag(BatchFlags.SKIP_QUEUE);
         session.sendPacket(wrapper);
     }
 

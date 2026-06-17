@@ -17,6 +17,8 @@ package dev.waterdog.waterdogpe.security;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import net.jodah.expiringmap.ExpirationPolicy;
 import net.jodah.expiringmap.ExpiringMap;
 
@@ -26,6 +28,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class ConnectionThrottle {
     private final ExpiringMap<InetAddress, Entry> map;
+    @Getter
+    @Setter
     private int limit;
 
     public ConnectionThrottle(int limit, int throttleTime) {
@@ -33,6 +37,7 @@ public class ConnectionThrottle {
         this.map = ExpiringMap.builder()
                 .expiration(throttleTime, TimeUnit.MILLISECONDS)
                 .expirationPolicy(ExpirationPolicy.ACCESSED)
+                .maxSize(5000)
                 .variableExpiration()
                 .build();
     }
@@ -57,14 +62,6 @@ public class ConnectionThrottle {
 
     public void reset(InetAddress address) {
         this.map.remove(address);
-    }
-
-    public void setLimit(int limit) {
-        this.limit = limit;
-    }
-
-    public int getLimit() {
-        return this.limit;
     }
 
     @Data

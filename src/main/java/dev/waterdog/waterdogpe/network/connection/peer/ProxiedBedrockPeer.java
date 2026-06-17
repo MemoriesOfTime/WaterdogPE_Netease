@@ -15,17 +15,18 @@
 
 package dev.waterdog.waterdogpe.network.connection.peer;
 
+import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.network.connection.codec.batch.FrameIdCodec;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.CompressionType;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.ProxiedCompressionCodec;
 import dev.waterdog.waterdogpe.network.connection.codec.packet.BedrockPacketCodec;
-import dev.waterdog.waterdogpe.network.netease.NetEaseUtils;
-import dev.waterdog.waterdogpe.network.netease.codec.NetEaseCompressionCodec;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.ReferenceCountUtil;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.log4j.Log4j2;
 import org.cloudburstmc.netty.channel.raknet.RakChannel;
 import org.cloudburstmc.netty.channel.raknet.config.RakChannelOption;
@@ -54,11 +55,18 @@ import java.util.concurrent.TimeUnit;
 @Log4j2
 public class ProxiedBedrockPeer extends BedrockPeer {
     private BedrockServerSession firstSession;
+    @Getter
     private CompressionStrategy compressionStrategy;
     private ProtocolVersion version = ProtocolVersion.oldest();
+    @Getter
+    @Setter
+    private boolean netEaseClient = false;
 
-    public ProxiedBedrockPeer(Channel channel, BedrockSessionFactory factory) {
+    private final ProxyServer proxy;
+
+    public ProxiedBedrockPeer(Channel channel, BedrockSessionFactory factory, ProxyServer proxy) {
         super(channel, factory);
+        this.proxy = proxy;
     }
 
     private void onBedrockBatch(BedrockBatchWrapper batch) {
@@ -69,7 +77,7 @@ public class ProxiedBedrockPeer extends BedrockPeer {
                         BedrockServerSession session = this.getSession(wrapper.getTargetSubClientId());
                         session.onPacket(wrapper);
                     } catch (Exception e) {
-                        log.error("[{}] 分发数据包时发生异常，子客户端ID: {}", 
+                        log.error("[{}] 分发数据包时发生异常，子客户端ID: {}",
                             getSocketAddress(), wrapper.getTargetSubClientId(), e);
                     }
                 }
@@ -171,7 +179,8 @@ public class ProxiedBedrockPeer extends BedrockPeer {
     public void setProtocol(ProtocolVersion protocol) {
         Objects.requireNonNull(protocol, "protocol");
         this.version = protocol;
-        this.getChannel().pipeline().get(BedrockPacketCodec.class).setCodecHelper(protocol.getCodec(), protocol.getCodec().createHelper());
+        var codec = this.netEaseClient ? protocol.getNetEaseCodec() : protocol.getCodec();
+        this.getChannel().pipeline().get(BedrockPacketCodec.class).setCodecHelper(codec, codec.createHelper());
     }
 
     @Override
@@ -194,23 +203,12 @@ public class ProxiedBedrockPeer extends BedrockPeer {
         this.channel.pipeline().addAfter(FrameIdCodec.NAME, BedrockEncryptionDecoder.NAME,
                 new BedrockEncryptionDecoder(secretKey, EncryptionUtils.createCipher(useCtr, false, secretKey)));
 
-        log.info("[ProxiedBedrockPeer] Encryption enabled for {}", getSocketAddress());
+        log.info("Encryption enabled for {}", getSocketAddress());
     }
 
     public void setCompression(CompressionAlgorithm algorithm) {
         if (algorithm instanceof CompressionType type && type.getBedrockAlgorithm() != null) {
             this.setCompression(type.getBedrockAlgorithm());
-            // netease
-            boolean isNetease = NetEaseUtils.isNetEaseClient(getRakVersion(), this.getCodec().getProtocolVersion());
-            if (isNetease) {
-                // 将编解码器替换为netease版本
-                CompressionStrategy currentStrategy = this.compressionStrategy;
-                if (currentStrategy != null) {
-                    this.channel.pipeline().replace(CompressionCodec.NAME, CompressionCodec.NAME, 
-                        new NetEaseCompressionCodec(currentStrategy, true));
-                    log.debug("[{}] 替换标准压缩编解码器为Netease版本，强制启用前缀", getSocketAddress());
-                }
-            }
             return;
         }
         throw new IllegalArgumentException("Unsupported compression algorithm: " + algorithm);
@@ -238,10 +236,6 @@ public class ProxiedBedrockPeer extends BedrockPeer {
         return this.channel.config().getOption(RakChannelOption.RAK_PROTOCOL_VERSION);
     }
 
-    public CompressionStrategy getCompressionStrategy() {
-        return this.compressionStrategy;
-    }
-
     public boolean isSplitScreen() {
         return this.sessions.size() > 1;
     }
@@ -254,7 +248,7 @@ public class ProxiedBedrockPeer extends BedrockPeer {
     }
 
     @Override
-    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+    public void channelRead(ChannelHandlerContext ctx, Object msg) {
         try {
             if (msg instanceof BedrockBatchWrapper) {
                 this.onBedrockBatch((BedrockBatchWrapper) msg);
@@ -262,16 +256,16 @@ public class ProxiedBedrockPeer extends BedrockPeer {
                 super.channelRead(ctx, ReferenceCountUtil.retain(msg));
             }
         } catch (Exception e) {
-            log.error("{} Exception caught in bedrock connection", ctx.channel().remoteAddress(), e);
             this.disconnect("Internal error");
+            this.proxy.getSecurityManager().onConnectionError(ctx.channel().remoteAddress(), e);
         } finally {
             ReferenceCountUtil.release(msg);
         }
     }
 
     @Override
-    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        log.error("{} Exception caught in bedrock connection", ctx.channel().remoteAddress(), cause);
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         this.disconnect("Internal error");
+        this.proxy.getSecurityManager().onConnectionError(ctx.channel().remoteAddress(), cause);
     }
 }

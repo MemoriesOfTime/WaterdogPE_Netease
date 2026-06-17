@@ -17,7 +17,7 @@ package dev.waterdog.waterdogpe.network.protocol.rewrite;
 
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import org.cloudburstmc.protocol.common.PacketSignal;
+import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
 
 public class BlockMapSimple extends BlockMap {
 

@@ -16,23 +16,22 @@
 package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 
 import com.nimbusds.jwt.SignedJWT;
+import dev.waterdog.waterdogpe.event.defaults.InitialServerConnectedEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
-import dev.waterdog.waterdogpe.network.protocol.registry.FakeDefinitionRegistry;
-import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
-import org.cloudburstmc.protocol.bedrock.packet.*;
-import dev.waterdog.waterdogpe.event.defaults.InitialServerConnectedEvent;
-import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
+import dev.waterdog.waterdogpe.network.protocol.Signals;
+import dev.waterdog.waterdogpe.network.protocol.registry.FakeDefinitionRegistry;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.BlockMap;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.BlockMapSimple;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.BlockPalette;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
+import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
+import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
+import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.bedrock.util.EncryptionUtils;
-import org.cloudburstmc.protocol.common.PacketSignal;
 
 import javax.crypto.SecretKey;
 import java.net.URI;
@@ -103,9 +102,12 @@ public class InitialHandler extends AbstractDownstreamHandler {
     public final PacketSignal handle(StartGamePacket packet) {
         RewriteData rewriteData = this.player.getRewriteData();
         rewriteData.setOriginalEntityId(packet.getRuntimeEntityId());
-        // rewriteData.setEntityId(ThreadLocalRandom.current().nextInt(10000, 15000));
-        // 直接使用原始玩家id，playerId统一使用网易uid，在nk服中处理
-        rewriteData.setEntityId(packet.getRuntimeEntityId());
+        if (this.player.isNetEaseClient()) {
+            // 网易客户端直接使用 RuntimeEntityId，保持 playerId = uid
+            rewriteData.setEntityId(packet.getRuntimeEntityId());
+        } else {
+            rewriteData.setEntityId(ThreadLocalRandom.current().nextInt(10000, 15000));
+        }
         rewriteData.setGameRules(packet.getGamerules());
         rewriteData.setDimension(packet.getDimensionId());
         rewriteData.setSpawnPosition(packet.getPlayerPosition());
@@ -132,7 +134,9 @@ public class InitialHandler extends AbstractDownstreamHandler {
             setItemDefinitions(packet.getItemDefinitions());
         }
         // Setup block registry
-        codecHelper.setBlockDefinitions(FakeDefinitionRegistry.createBlockRegistry());
+        var fakeBlockRegistry = FakeDefinitionRegistry.createBlockRegistry();
+        codecHelper.setBlockDefinitions(fakeBlockRegistry);
+        this.connection.getCodecHelper().setBlockDefinitions(fakeBlockRegistry);
         // Enable runtimeId rewrite
         this.player.setCanRewrite(true);
 

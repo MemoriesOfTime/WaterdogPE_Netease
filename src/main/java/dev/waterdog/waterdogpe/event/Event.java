@@ -17,7 +17,7 @@ package dev.waterdog.waterdogpe.event;
 
 import dev.waterdog.waterdogpe.utils.exceptions.EventException;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
-import org.cloudburstmc.protocol.common.util.Preconditions;
+import org.cloudburstmc.protocol.bedrock.util.Preconditions;
 
 import java.util.Collections;
 import java.util.List;

@@ -37,4 +37,10 @@ public interface IReconnectHandler {
     default ServerInfo getFallbackServer(ProxiedPlayer player, ServerInfo oldServer, String kickMessage) {
         throw new UnsupportedOperationException("Use getFallbackServer(ProxiedPlayer player, ServerInfo oldServer, ReconnectReason reason, String kickMessage) instead");
     }
+
+    /**
+     * Called when server list is reloaded, allowing handler to reset internal state.
+     */
+    default void onReload() {
+    }
 }

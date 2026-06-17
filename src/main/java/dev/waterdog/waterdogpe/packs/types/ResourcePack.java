@@ -15,23 +15,65 @@
 
 package dev.waterdog.waterdogpe.packs.types;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.UUID;
 
+@Getter
 public abstract class ResourcePack {
 
     public static final String TYPE_RESOURCES = "resources";
+    public static final String TYPE_BEHAVIOR = "behavior";
     public static final String TYPE_DATA = "data";
 
     protected final Path packPath;
     protected PackManifest packManifest;
+    @Setter
     protected String contentKey;
+    @Setter
+    protected SupportType supportType = SupportType.UNIVERSAL;
 
     public ResourcePack(Path packPath) {
         this.packPath = packPath;
+    }
+
+    /**
+     * Defines which Minecraft editions a resource pack supports
+     */
+    public enum SupportType {
+        /**
+         * Resource pack only supports Microsoft (International) version
+         */
+        MICROSOFT,
+
+        /**
+         * Resource pack only supports NetEase (Chinese) version
+         */
+        NETEASE,
+
+        /**
+         * Resource pack supports all versions (both Microsoft and NetEase)
+         */
+        UNIVERSAL;
+
+        /**
+         * Check if this support type is compatible with the given client type
+         *
+         * @param isNetEaseClient whether the client is NetEase version
+         * @return true if compatible, false otherwise
+         */
+        public boolean isCompatibleWith(boolean isNetEaseClient) {
+            if (this == UNIVERSAL) {
+                return true;
+            }
+            return isNetEaseClient ? this == NETEASE : this == MICROSOFT;
+        }
     }
 
     public abstract long getPackSize();
@@ -47,17 +89,23 @@ public abstract class ResourcePack {
     public abstract InputStream getStream(Path path) throws IOException;
 
     public boolean loadManifest() throws IOException {
+        // Try standard manifest.json first
         try (InputStream stream = this.getStream(PackManifest.MANIFEST_PATH)) {
             if (stream != null) {
                 this.packManifest = PackManifest.fromStream(stream);
                 return true;
             }
         }
+        
+        // Try NetEase pack_manifest.json
+        try (InputStream stream = this.getStream(Paths.get("pack_manifest.json"))) {
+            if (stream != null) {
+                this.packManifest = PackManifest.fromStream(stream);
+                return true;
+            }
+        }
+        
         return false;
-    }
-
-    public PackManifest getPackManifest() {
-        return this.packManifest;
     }
 
     public String getPackName() {
@@ -73,18 +121,12 @@ public abstract class ResourcePack {
     }
 
     public String getType() {
+        for (PackManifest.PackModule module : this.packManifest.getModules()) {
+            if (TYPE_DATA.equals(module.getType())) {
+                return TYPE_DATA;
+            }
+        }
         return this.packManifest.getModules().get(0).getType();
     }
 
-    public Path getPackPath() {
-        return this.packPath;
-    }
-
-    public String getContentKey() {
-        return contentKey;
-    }
-
-    public void setContentKey(String contentKey) {
-        this.contentKey = contentKey;
-    }
 }

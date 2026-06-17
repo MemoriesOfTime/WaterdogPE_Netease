@@ -15,17 +15,17 @@
 
 package dev.waterdog.waterdogpe.network.protocol.rewrite;
 
+import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
+import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
+import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import it.unimi.dsi.fastutil.longs.LongListIterator;
 import org.cloudburstmc.protocol.bedrock.data.camera.CameraAttachToEntityInstruction;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataMap;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataType;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityLinkData;
+import org.cloudburstmc.protocol.bedrock.data.primitiveshape.*;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
-import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
-import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import org.cloudburstmc.protocol.common.PacketSignal;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -138,10 +138,10 @@ public class EntityMap implements BedrockPacketHandler {
         ListIterator<EntityLinkData> iterator = packet.getEntityLinks().listIterator();
         while (iterator.hasNext()) {
             EntityLinkData entityLink = iterator.next();
-            long from = PlayerRewriteUtils.rewriteId(entityLink.getFrom(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-            long to = PlayerRewriteUtils.rewriteId(entityLink.getTo(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-            if (entityLink.getFrom() != from || entityLink.getTo() != to) {
-                iterator.set(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated()));
+            long from = PlayerRewriteUtils.rewriteId(entityLink.from(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+            long to = PlayerRewriteUtils.rewriteId(entityLink.to(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+            if (entityLink.from() != from || entityLink.to() != to) {
+                iterator.set(new EntityLinkData(from, to, entityLink.type(), entityLink.immediate(), entityLink.riderInitiated(), entityLink.vehicleAngularVelocity()));
                 signal2 = PacketSignal.HANDLED;
             }
         }
@@ -161,10 +161,10 @@ public class EntityMap implements BedrockPacketHandler {
         ListIterator<EntityLinkData> iterator = packet.getEntityLinks().listIterator();
         while (iterator.hasNext()) {
             EntityLinkData entityLink = iterator.next();
-            long from = PlayerRewriteUtils.rewriteId(entityLink.getFrom(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-            long to = PlayerRewriteUtils.rewriteId(entityLink.getTo(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-            if (entityLink.getFrom() != from || entityLink.getTo() != to) {
-                iterator.set(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated()));
+            long from = PlayerRewriteUtils.rewriteId(entityLink.from(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+            long to = PlayerRewriteUtils.rewriteId(entityLink.to(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+            if (entityLink.from() != from || entityLink.to() != to) {
+                iterator.set(new EntityLinkData(from, to, entityLink.type(), entityLink.immediate(), entityLink.riderInitiated(), entityLink.vehicleAngularVelocity()));
                 signal2 = PacketSignal.HANDLED;
             }
         }
@@ -229,11 +229,11 @@ public class EntityMap implements BedrockPacketHandler {
     @Override
     public PacketSignal handle(SetEntityLinkPacket packet) {
         EntityLinkData entityLink = packet.getEntityLink();
-        long from = PlayerRewriteUtils.rewriteId(entityLink.getFrom(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-        long to = PlayerRewriteUtils.rewriteId(entityLink.getTo(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+        long from = PlayerRewriteUtils.rewriteId(entityLink.from(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+        long to = PlayerRewriteUtils.rewriteId(entityLink.to(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
 
-        if (from != entityLink.getFrom() || to != entityLink.getTo()) {
-            packet.setEntityLink(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated()));
+        if (from != entityLink.from() || to != entityLink.to()) {
+            packet.setEntityLink(new EntityLinkData(from, to, entityLink.type(), entityLink.immediate(), entityLink.riderInitiated(), entityLink.vehicleAngularVelocity()));
             return PacketSignal.HANDLED;
         }
         return PacketSignal.UNHANDLED;
@@ -372,6 +372,74 @@ public class EntityMap implements BedrockPacketHandler {
             signal = mergeSignals(signal, returnedSignal);
         }
         return signal;
+    }
+
+    @Override
+    public PacketSignal handle(PrimitiveShapesPacket packet) {
+        PacketSignal signal = PacketSignal.UNHANDLED;
+        ListIterator<PrimitiveShape> iterator = packet.getShapes().listIterator();
+        while (iterator.hasNext()) {
+            PrimitiveShape shape = iterator.next();
+            Long attachedEntityId = shape.getAttachedToEntityId();
+            if (attachedEntityId != null) {
+                PacketSignal returnedSignal = rewritePrimitiveShapeAttachedEntityId(iterator, shape, attachedEntityId);
+                signal = mergeSignals(signal, returnedSignal);
+            }
+        }
+        return signal;
+    }
+
+    private PacketSignal rewritePrimitiveShapeAttachedEntityId(ListIterator<PrimitiveShape> iterator, PrimitiveShape shape, long attachedEntityId) {
+        long rewriteId = PlayerRewriteUtils.rewriteId(attachedEntityId, this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+        if (rewriteId == attachedEntityId) {
+            return PacketSignal.UNHANDLED;
+        }
+
+        iterator.set(copyPrimitiveShape(shape, rewriteId));
+        return PacketSignal.HANDLED;
+    }
+
+    private static PrimitiveShape copyPrimitiveShape(PrimitiveShape shape, Long attachedToEntityId) {
+        PrimitiveShape.Type type = shape.getType();
+        if (type == null) {
+            return new PrimitiveShape(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
+                    shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), attachedToEntityId);
+        }
+
+        return switch (type) {
+            case ARROW -> {
+                PrimitiveArrow arrow = (PrimitiveArrow) shape;
+                yield new PrimitiveArrow(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
+                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), arrow.getArrowEndPosition(),
+                        arrow.getArrowHeadLength(), arrow.getArrowHeadRadius(), arrow.getArrowHeadSegments(), attachedToEntityId);
+            }
+            case BOX -> {
+                PrimitiveBox box = (PrimitiveBox) shape;
+                yield new PrimitiveBox(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
+                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), box.getBoxBounds(), attachedToEntityId);
+            }
+            case CIRCLE -> {
+                PrimitiveCircle circle = (PrimitiveCircle) shape;
+                yield new PrimitiveCircle(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
+                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), circle.getSegments(), attachedToEntityId);
+            }
+            case LINE -> {
+                PrimitiveLine line = (PrimitiveLine) shape;
+                yield new PrimitiveLine(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
+                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), line.getLineEndPosition(), attachedToEntityId);
+            }
+            case SPHERE -> {
+                PrimitiveSphere sphere = (PrimitiveSphere) shape;
+                yield new PrimitiveSphere(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
+                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), sphere.getSegments(), attachedToEntityId);
+            }
+            case TEXT -> {
+                PrimitiveText text = (PrimitiveText) shape;
+                yield new PrimitiveText(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
+                        shape.getTotalTimeLeft(), shape.getColor(), text.getText(), text.isUseRotation(), text.getBackgroundColor(),
+                        text.isDepthTest(), text.isShowBackface(), text.isShowTextBackface(), shape.getMaximumRenderDistance(), attachedToEntityId);
+            }
+        };
     }
 
     private PacketSignal rewriteMetadata(EntityDataMap metadata) {

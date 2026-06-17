@@ -16,25 +16,25 @@
 package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 
 import com.nimbusds.jwt.SignedJWT;
+import dev.waterdog.waterdogpe.event.defaults.ServerTransferEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
+import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
+import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
+import dev.waterdog.waterdogpe.network.protocol.rewrite.types.BlockPalette;
+import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
+import dev.waterdog.waterdogpe.player.ProxiedPlayer;
+import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
+import it.unimi.dsi.fastutil.longs.Long2LongMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+import it.unimi.dsi.fastutil.longs.LongSet;
+import it.unimi.dsi.fastutil.objects.ObjectSet;
 import lombok.extern.log4j.Log4j2;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.data.ScoreInfo;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import dev.waterdog.waterdogpe.event.defaults.ServerTransferEvent;
-import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
-import dev.waterdog.waterdogpe.network.protocol.rewrite.types.BlockPalette;
-import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
-import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import dev.waterdog.waterdogpe.network.protocol.Signals;
-import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
-import it.unimi.dsi.fastutil.longs.Long2LongMap;
-import it.unimi.dsi.fastutil.longs.LongSet;
-import it.unimi.dsi.fastutil.objects.ObjectSet;
 import org.cloudburstmc.protocol.bedrock.util.EncryptionUtils;
-import org.cloudburstmc.protocol.common.PacketSignal;
+import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
 
 import javax.crypto.SecretKey;
 import java.net.URI;
@@ -95,6 +95,15 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
             this.connection.disconnect();
             this.player.sendMessage(new TranslationContainer("waterdog.downstream.transfer.failed", this.connection.getServerInfo().getServerName(), message));
         }, this.connection);
+    }
+
+    @Override
+    public PacketSignal handle(BiomeDefinitionListPacket packet) {
+        // 尝试解决网易客户端卡顿问题
+        if (this.player.isNetEaseClient()) {
+            return Signals.CANCEL;
+        }
+        return PacketSignal.UNHANDLED;
     }
 
     @Override
@@ -189,6 +198,12 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
         // After client successfully changes dimension we receive PlayerActionPacket#DIMENSION_CHANGE_SUCCESS and continue in transfer
         int newDimension = determineDimensionId(rewriteData.getDimension(), packet.getDimensionId());
 
+        // Java clients (via ViaProxy) handle same-dimension switching internally through ViaBedrock,
+        // skip the fake dimension trick to avoid getting stuck on loading screens.
+        if (this.player.getLoginData().isJavaClient() && newDimension != packet.getDimensionId()) {
+            newDimension = packet.getDimensionId();
+        }
+
         TransferCallback transferCallback = new TransferCallback(this.player, this.connection, oldConnection.getServerInfo(), packet.getDimensionId());
         rewriteData.setDimension(newDimension);
         rewriteData.setTransferCallback(transferCallback);
@@ -219,17 +234,6 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
             transferCallback.onDimChangeSuccess();
         }
         return Signals.CANCEL;
-    }
-
-    @Override
-    public PacketSignal handle(BiomeDefinitionListPacket packet) {
-        boolean isNetease = this.player.isNeteaseClient;
-        if (isNetease) {
-            // 只在服务器切换时取消BiomeDefinitionListPacket(ID: 122)的发送到客户端
-            this.player.getLogger().debug("[Netease] Blocking BiomeDefinitionListPacket (ID: 122) from being sent to client during server switch");
-            return Signals.CANCEL;
-        }
-        return super.handle(packet);
     }
 
     @Override

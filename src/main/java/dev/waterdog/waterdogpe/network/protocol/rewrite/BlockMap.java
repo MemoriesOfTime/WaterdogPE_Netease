@@ -26,8 +26,8 @@ import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import io.netty.buffer.AbstractByteBufAllocator;
 import io.netty.buffer.ByteBuf;
-import org.cloudburstmc.protocol.common.PacketSignal;
-import org.cloudburstmc.protocol.common.util.VarInts;
+import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
+import org.cloudburstmc.protocol.bedrock.util.VarInts;
 
 import static org.cloudburstmc.protocol.bedrock.data.LevelEvent.PARTICLE_CRACK_BLOCK;
 import static org.cloudburstmc.protocol.bedrock.data.LevelEvent.PARTICLE_DESTROY_BLOCK;
@@ -119,7 +119,7 @@ public class BlockMap implements BedrockPacketHandler {
 
     @Override
     public PacketSignal handle(UpdateBlockPacket packet) {
-        int runtimeId = packet.getDefinition().getRuntimeId();
+        int runtimeId = packet.getDefinition().runtimeId();
         BlockDefinition definition = this.player.getRewriteData().getCodecHelper()
                 .getBlockDefinitions().getDefinition(this.translateId(runtimeId));
         packet.setDefinition(definition);

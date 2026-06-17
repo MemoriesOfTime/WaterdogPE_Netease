@@ -22,10 +22,10 @@ import dev.waterdog.waterdogpe.network.connection.codec.batch.BedrockBatchDecode
 import dev.waterdog.waterdogpe.network.connection.codec.batch.BedrockBatchEncoder;
 import dev.waterdog.waterdogpe.network.connection.codec.batch.FrameIdCodec;
 import dev.waterdog.waterdogpe.network.connection.codec.client.ClientEventHandler;
-import dev.waterdog.waterdogpe.network.connection.codec.client.ClientPacketQueue;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.CompressionType;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.ProxiedCompressionCodec;
 import dev.waterdog.waterdogpe.network.connection.codec.packet.BedrockPacketCodec;
+import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import io.netty.channel.*;
@@ -51,8 +51,11 @@ public class ProxiedClientSessionInitializer extends ChannelInitializer<Channel>
     }
 
     @Override
-    protected void initChannel(Channel channel) throws Exception {
-        int rakVersion = this.player.getProtocol().getRaknetVersion();
+    protected void initChannel(Channel channel) {
+        boolean netEaseClient = this.player.isNetEaseClient();
+        int rakVersion = netEaseClient
+                ? this.player.getProtocol().getNetEaseRaknetVersion()
+                : this.player.getProtocol().getRaknetVersion();
         CompressionType compression = this.player.getProxy().getConfiguration().getCompression();
 
         channel.attr(PacketDirection.ATTRIBUTE).set(PacketDirection.SERVER_BOUND);
@@ -68,11 +71,11 @@ public class ProxiedClientSessionInitializer extends ChannelInitializer<Channel>
 
         channel.pipeline()
                 .addLast(FrameIdCodec.NAME, RAKNET_FRAME_CODEC)
-                .addLast(CompressionCodec.NAME, new ProxiedCompressionCodec(getCompressionStrategy(compression, rakVersion, true), false))
+                .addLast(CompressionCodec.NAME, new ProxiedCompressionCodec(getCompressionStrategy(compression, rakVersion, true, netEaseClient), false))
                 .addLast(BedrockBatchDecoder.NAME, BATCH_DECODER)
                 .addLast(BedrockBatchEncoder.NAME, new BedrockBatchEncoder())
-                .addLast(BedrockPacketCodec.NAME, getPacketCodec(rakVersion))
-                .addLast(ClientPacketQueue.NAME, new ClientPacketQueue());
+                .addLast(BedrockPacketCodec.NAME, getPacketCodec(rakVersion, netEaseClient));
+        this.initPacketCodec(channel.pipeline().get(BedrockPacketCodec.class));
 
         ClientConnection connection = this.createConnection(channel);
         if (connection instanceof ChannelHandler handler) {
@@ -90,6 +93,13 @@ public class ProxiedClientSessionInitializer extends ChannelInitializer<Channel>
 
     protected ClientConnection createConnection(Channel channel) {
         return new BedrockClientConnection(this.player, this.serverInfo, channel);
+    }
+
+    private void initPacketCodec(BedrockPacketCodec packetCodec) {
+        ProtocolVersion protocol = this.player.getProtocol();
+        var codec = this.player.isNetEaseClient() ? protocol.getNetEaseCodec() : protocol.getCodec();
+        packetCodec.setCodecHelper(codec,
+                ClientConnection.createCodecHelperSnapshot(codec, this.player.getConnection().getPeer().getCodecHelper()));
     }
 
     @RequiredArgsConstructor

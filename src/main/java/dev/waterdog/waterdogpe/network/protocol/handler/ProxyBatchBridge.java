@@ -28,8 +28,8 @@ import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockPacketWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
-import org.cloudburstmc.protocol.common.PacketSignal;
-import org.cloudburstmc.protocol.common.util.Preconditions;
+import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
+import org.cloudburstmc.protocol.bedrock.util.Preconditions;
 
 import java.util.ListIterator;
 
@@ -54,6 +54,14 @@ public class ProxyBatchBridge implements BedrockPacketHandler {
             BedrockPacketWrapper wrapper = iterator.next();
             if (wrapper.getPacket() == null) {
                 this.decodePacket(wrapper, source.getPacketDirection());
+            }
+
+            if (wrapper.getPacket() == null) {
+                log.debug("Removing undecoded packet from batch (packetId={})", wrapper.getPacketId());
+                iterator.remove();
+                wrapper.release();
+                batch.modify();
+                continue;
             }
 
             PacketSignal signal = this.handlePacket(wrapper.getPacket());
@@ -90,14 +98,10 @@ public class ProxyBatchBridge implements BedrockPacketHandler {
         try {
             msg.skipBytes(wrapper.getHeaderLength()); // skip header
             wrapper.setPacket(this.codec.tryDecode(helper, msg, wrapper.getPacketId(), direction.getInbound()));
+        } catch (IllegalArgumentException e) {
+            log.warn("Skipping packet with wrong direction (packetId={}): {}", wrapper.getPacketId(), e.getMessage());
         } catch (Throwable t) {
-            // netease：在子服务器是nukkit-mot时，玩家登录会出现一次commands=[]的AvailableCommandsPacket，导致报错
-            String errorMessage = t.getMessage();
-            if (errorMessage != null && errorMessage.contains("commands=[]")) {
-                log.warn("Failed to decode packet: {}", errorMessage);
-            } else {
-                log.warn("Failed to decode packet", t);
-            }
+            log.warn("Failed to decode packet", t);
             throw t;
         } finally {
             msg.release();

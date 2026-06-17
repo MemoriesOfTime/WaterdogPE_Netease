@@ -17,6 +17,7 @@ package dev.waterdog.waterdogpe.network.connection.codec.initializer;
 
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.network.NetworkMetrics;
+import dev.waterdog.waterdogpe.network.connection.codec.server.ServerErrorHandler;
 import dev.waterdog.waterdogpe.network.connection.peer.BedrockServerSession;
 import dev.waterdog.waterdogpe.network.connection.peer.ProxiedBedrockPeer;
 import dev.waterdog.waterdogpe.network.protocol.handler.upstream.LoginUpstreamHandler;
@@ -53,7 +54,11 @@ public class ProxiedServerSessionInitializer extends ProxiedSessionInitializer<B
             channel.config().setOption(RakChannelOption.RAK_METRICS, rakMetrics);
         }
 
-        super.initChannel(channel);
+        boolean netEaseSupport = this.proxy.getConfiguration().isNeteaseClientSupport();
+        int rakVersion = channel.config().getOption(RakChannelOption.RAK_PROTOCOL_VERSION);
+        super.initChannel(channel, netEaseSupport && rakVersion == 8);
+
+        channel.pipeline().addLast(ServerErrorHandler.NAME, new ServerErrorHandler.Child(proxy));
     }
 
     @Override
