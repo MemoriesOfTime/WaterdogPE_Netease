@@ -43,17 +43,23 @@ import it.unimi.dsi.fastutil.longs.*;
 import it.unimi.dsi.fastutil.objects.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.cloudburstmc.protocol.bedrock.data.HudElement;
 import org.cloudburstmc.protocol.bedrock.data.ScoreInfo;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerType;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandOriginData;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandOriginType;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.bedrock.util.Preconditions;
+import it.unimi.dsi.fastutil.ints.*;
 
 import java.net.InetSocketAddress;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -72,6 +78,15 @@ public class ProxiedPlayer implements CommandSender {
     private final AtomicBoolean loginCalled = new AtomicBoolean(false);
     private final AtomicBoolean loginCompleted = new AtomicBoolean(false);
     private volatile CharSequence disconnectReason;
+
+    /**
+     * Hard cap on how long the async {@link PlayerLoginEvent} future may take to complete.
+     * If a plugin handler registers a CompletableFuture that never completes (e.g. a hung
+     * Redis/coroutine call), the player would otherwise be stranded forever: loginCompleted
+     * never flips, so {@link #disconnect(CharSequence)} can never evict it. The timeout
+     * guarantees the future always settles, which always releases the player.
+     */
+    private static final long LOGIN_EVENT_TIMEOUT_SECONDS = 60;
 
     @Getter
     private final RewriteData rewriteData = new RewriteData();
@@ -92,6 +107,16 @@ public class ProxiedPlayer implements CommandSender {
     private final Long2LongMap entityLinks = Long2LongMaps.synchronize(new Long2LongOpenHashMap());
     @Getter
     private final LongSet chunkBlobs = LongSets.synchronize(new LongOpenHashSet());
+    @Getter
+    private final Int2IntMap volumeEntities = Int2IntMaps.synchronize(new Int2IntOpenHashMap()); // id -> dimension
+    @Getter
+    private final Set<HudElement> hiddenHudElements = ObjectSets.synchronize(new ObjectOpenHashSet<>());
+    @Getter @Setter
+    private volatile boolean fogApplied;
+    @Getter @Setter
+    private volatile int inputLockData;
+    @Getter
+    private final Int2ObjectMap<ContainerType> openContainers = Int2ObjectMaps.synchronize(new Int2ObjectOpenHashMap<>()); // id -> type
     private final Object2ObjectMap<String, Permission> permissions = new Object2ObjectOpenHashMap<>();
     private final Collection<ServerInfo> pendingServers = ObjectCollections.synchronize(new ObjectArrayList<>());
     private ClientConnection clientConnection;
@@ -158,11 +183,19 @@ public class ProxiedPlayer implements CommandSender {
         }
 
         PlayerLoginEvent event = new PlayerLoginEvent(this);
-        this.proxy.getEventManager().callEvent(event).whenComplete((futureEvent, error) -> {
+        this.proxy.getEventManager().callEvent(event)
+                // Never let a misbehaving (hung) async login handler strand the player forever.
+                .orTimeout(LOGIN_EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .whenComplete((futureEvent, error) -> {
             this.loginCompleted.set(true);
 
             if (error != null) {
-                this.getLogger().throwing(error);
+                if (error instanceof TimeoutException) {
+                    this.getLogger().warning("[{}|{}] PlayerLoginEvent did not complete within {}s - forcing disconnect",
+                            this.getAddress(), this.getName(), LOGIN_EVENT_TIMEOUT_SECONDS);
+                } else {
+                    this.getLogger().throwing(error);
+                }
                 this.disconnect(new TranslationContainer("waterdog.downstream.initial.connect"));
                 return;
             }
@@ -439,6 +472,18 @@ public class ProxiedPlayer implements CommandSender {
                 connection.getServerInfo().getServerName() + "] has disconnected");
         if (this.getPendingConnection() == connection) {
             this.setPendingConnection(null);
+            return;
+        }
+
+        // Active downstream closed with no DisconnectPacket/timeout (those are handled in
+        // ConnectedDownstreamHandler/onDownstreamTimeout). Fail over instead of leaving the player frozen on
+        // a dead connection. Guards skip this when a transfer/disconnect is already in flight.
+        if (connection == this.clientConnection
+                && this.getPendingConnection() == null
+                && this.pendingServers.isEmpty()
+                && !this.disconnected.get()
+                && !this.sendToFallback(connection.getServerInfo(), ReconnectReason.UNKNOWN, "Downstream disconnected")) {
+            this.disconnect(new TranslationContainer("waterdog.downstream.down", connection.getServerInfo().getServerName(), "disconnected"));
         }
     }
 

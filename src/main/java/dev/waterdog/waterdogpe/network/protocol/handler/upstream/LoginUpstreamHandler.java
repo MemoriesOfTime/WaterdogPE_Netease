@@ -17,6 +17,7 @@ package dev.waterdog.waterdogpe.network.protocol.handler.upstream;
 
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.WaterdogPE;
+import dev.waterdog.waterdogpe.event.defaults.IncompatibleProtocolEvent;
 import dev.waterdog.waterdogpe.event.defaults.PlayerAuthenticatedEvent;
 import dev.waterdog.waterdogpe.event.defaults.PlayerPreAuthEvent;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.CompressionType;
@@ -85,13 +86,17 @@ public class LoginUpstreamHandler implements BedrockPacketHandler {
         if (protocol != null) {
             return protocol;
         }
-
+        IncompatibleProtocolEvent event = new IncompatibleProtocolEvent(player, protocolVersion,
+                (protocolVersion > WaterdogPE.version().latestProtocolVersion() ?
+                        PlayStatusPacket.Status.LOGIN_FAILED_SERVER_OLD :
+                        PlayStatusPacket.Status.LOGIN_FAILED_CLIENT_OLD),
+                "disconnect.disconnected"
+        );
+        this.proxy.getEventManager().callEvent(event);
         PlayStatusPacket status = new PlayStatusPacket();
-        status.setStatus((protocolVersion > WaterdogPE.version().latestProtocolVersion() ?
-                PlayStatusPacket.Status.LOGIN_FAILED_SERVER_OLD :
-                PlayStatusPacket.Status.LOGIN_FAILED_CLIENT_OLD));
+        status.setStatus(event.getStatus());
         this.session.sendPacketImmediately(status);
-        this.session.disconnect();
+        this.session.disconnect(event.getDisconnectMessage().toString());
         this.proxy.getLogger().warning("[{}] <-> Upstream has disconnected due to incompatible protocol (protocol={})", this.session.getSocketAddress(), protocolVersion);
         return null;
     }

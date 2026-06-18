@@ -15,10 +15,10 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>21</maven.compiler.release>
         <raklib.version>1.0.0.CR4-SNAPSHOT</raklib.version>
-        <protocol.version>1.26.20-R4-SNAPSHOT</protocol.version>
+        <protocol.version>1.26.30-R2-SNAPSHOT</protocol.version>
         <log4j2.version>2.25.4</log4j2.version>
         <jline.version>3.30.6</jline.version>
-        <netty.version>4.1.101.Final</netty.version>
+        <netty.version>4.1.135.Final</netty.version>
     </properties>
 
     <repositories>
@@ -60,6 +60,20 @@
             <url>https://repo.mot.dev/repository/maven-snapshots/</url>
         </snapshotRepository>
     </distributionManagement>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Pin all Netty artifacts to a single version; the MOT RakNet fork's pom
+                 pins core netty to 4.1.131, which would otherwise mix with 4.1.135. -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
