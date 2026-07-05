@@ -17,6 +17,7 @@ package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 
 import com.nimbusds.jwt.SignedJWT;
 import dev.waterdog.waterdogpe.event.defaults.ServerTransferEvent;
+import dev.waterdog.waterdogpe.event.defaults.PostTransferCompleteEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.network.protocol.Signals;
@@ -152,6 +153,7 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
 
         ClientConnection oldConnection = this.player.getDownstreamConnection();
         oldConnection.getServerInfo().removeConnection(oldConnection);
+        oldConnection.setPacketHandler(null);
         oldConnection.disconnect();
         this.player.setDownstreamConnection(this.connection);
         this.connection.getServerInfo().addConnection(this.connection);
@@ -267,9 +269,19 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
                     rewriteData.getEntityId(), player.getProtocol(), true);
             // Force client to exit first dim screen after one second
             this.player.getProxy().getScheduler().scheduleDelayed(() -> {
+                if (!player.acceptPlayStatus()) {
+                    return;
+                }
                 PlayStatusPacket statusPacket = new PlayStatusPacket();
                 statusPacket.setStatus(PlayStatusPacket.Status.PLAYER_SPAWN);
                 this.player.getConnection().sendPacketImmediately(statusPacket);
+                player.setAcceptPlayStatus(false);
+
+                transferCallback.onDimChangeSuccess();
+                transferCallback.onDimChangeSuccess();
+
+                PostTransferCompleteEvent postEvent = new PostTransferCompleteEvent(this.connection, this.player);
+                this.player.getProxy().getEventManager().callEvent(postEvent);
             }, 40);
         } else if (newDimension == packet.getDimensionId()) {
             // Transfer between different dimensions
