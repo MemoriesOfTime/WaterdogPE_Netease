@@ -82,6 +82,7 @@ import org.cloudburstmc.protocol.bedrock.codec.v827.Bedrock_v827;
 import org.cloudburstmc.protocol.bedrock.codec.v844.Bedrock_v844;
 import org.cloudburstmc.protocol.bedrock.codec.v859.Bedrock_v859;
 import org.cloudburstmc.protocol.bedrock.codec.v860.Bedrock_v860;
+import org.cloudburstmc.protocol.bedrock.codec.v860_netease.Bedrock_v860_NetEase;
 import org.cloudburstmc.protocol.bedrock.codec.v898.Bedrock_v898;
 import org.cloudburstmc.protocol.bedrock.codec.v924.Bedrock_v924;
 import org.cloudburstmc.protocol.bedrock.codec.v944.Bedrock_v944;
@@ -146,7 +147,7 @@ public enum ProtocolVersion {
     MINECRAFT_PE_1_21_110(843, 844, Bedrock_v844.CODEC, "1.21.110"),
     MINECRAFT_PE_1_21_111(844, Bedrock_v844.CODEC, "1.21.111", "1.21.112", "1.21.113", "1.21.114"),
     MINECRAFT_PE_1_21_120(859, Bedrock_v859.CODEC, "1.21.120", "1.21.121", "1.21.123"),
-    MINECRAFT_PE_1_21_124(860, Bedrock_v860.CODEC, "1.21.124"),
+    MINECRAFT_PE_1_21_124(860, Bedrock_v860.CODEC, Bedrock_v860_NetEase.CODEC, "1.21.124"),
     MINECRAFT_PE_1_21_130(898, Bedrock_v898.CODEC, "1.21.130", "1.21.131", "1.21.132"),
     MINECRAFT_PE_1_26_0(924, Bedrock_v924.CODEC, "26.0", "26.1", "26.2", "26.3"),
     MINECRAFT_PE_1_26_10(944, Bedrock_v944.CODEC, "26.10", "26.11", "26.11", "26.12", "26.13"),

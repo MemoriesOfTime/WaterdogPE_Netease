@@ -14,8 +14,11 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>21</maven.compiler.release>
-        <raklib.version>1.1.0.CR1-SNAPSHOT</raklib.version>
-        <protocol.version>1.26.30-R2-SNAPSHOT</protocol.version>
+        <raklib.version>1.1.0.CR1-20260606.034627-2</raklib.version>
+        <!-- bedrock-codec and bedrock-connection are published as separate timestamped
+             SNAPSHOT builds; pin each to its own immutable timestamp version. -->
+        <bedrock-codec.version>1.26.30-R2-20260705.112811-3</bedrock-codec.version>
+        <bedrock-connection.version>1.26.30-R2-20260705.112858-3</bedrock-connection.version>
         <log4j2.version>2.25.4</log4j2.version>
         <jline.version>3.30.6</jline.version>
         <netty.version>4.1.135.Final</netty.version>
@@ -89,7 +92,7 @@
         <dependency>
             <groupId>net.cubespace</groupId>
             <artifactId>Yamler-Core</artifactId>
-            <version>2.4.1-SNAPSHOT</version>
+            <version>2.4.1-20240423.205119-1</version>
             <scope>compile</scope>
         </dependency>
         <dependency>
@@ -190,7 +193,7 @@
         <dependency>
             <groupId>org.allaymc.protocol</groupId>
             <artifactId>bedrock-codec</artifactId>
-            <version>${protocol.version}</version>
+            <version>${bedrock-codec.version}</version>
             <exclusions>
                 <exclusion>
                     <groupId>io.netty</groupId>
@@ -201,7 +204,7 @@
         <dependency>
             <groupId>org.allaymc.protocol</groupId>
             <artifactId>bedrock-connection</artifactId>
-            <version>${protocol.version}</version>
+            <version>${bedrock-connection.version}</version>
             <exclusions>
                 <exclusion>
                     <groupId>org.cloudburstmc.netty</groupId>
