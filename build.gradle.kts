@@ -136,7 +136,10 @@ publishing {
                 if (version.toString().endsWith("-SNAPSHOT")) "https://repo.mot.dev/repository/maven-snapshots/"
                 else "https://repo.mot.dev/repository/maven-releases/"
             )
-            credentials(PasswordCredentials::class)
+            credentials {
+                username = System.getenv("MAVEN_DEPLOY_USERNAME") ?: "username"
+                password = System.getenv("MAVEN_DEPLOY_PASSWORD") ?: "password"
+            }
         }
     }
 }
