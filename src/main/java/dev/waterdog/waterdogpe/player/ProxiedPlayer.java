@@ -226,7 +226,7 @@ public class ProxiedPlayer implements CommandSender {
     }
 
     private void sendResourcePacks() {
-        ResourcePacksInfoPacket packet = this.proxy.getPackManager().buildPacksInfoPacket(this.getProtocol());
+        ResourcePacksInfoPacket packet = this.proxy.getPackManager().buildPacksInfoPacket(this.getProtocol(), this.getDevicePlatform());
         PlayerResourcePackInfoSendEvent event = new PlayerResourcePackInfoSendEvent(this, packet);
         this.proxy.getEventManager().callEvent(event);
         if (event.isCancelled()) {

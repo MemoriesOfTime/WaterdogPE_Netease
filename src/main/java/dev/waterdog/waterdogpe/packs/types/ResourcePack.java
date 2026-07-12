@@ -38,6 +38,13 @@ public abstract class ResourcePack {
     protected String contentKey;
     @Setter
     protected SupportType supportType = SupportType.UNIVERSAL;
+    /**
+     * When set, clients supporting it will download this pack directly from the URL
+     * instead of using the in-protocol chunked transfer. The URL must serve exactly
+     * the same bytes as this pack, since chunked transfer stays available as fallback.
+     */
+    @Setter
+    protected String cdnUrl;
 
     public ResourcePack(Path packPath) {
         this.packPath = packPath;
