@@ -84,6 +84,10 @@ dependencies {
 
 gitProperties {
     failOnNoGitDirectory = false
+    // Pin the .git directory explicitly so the plugin never walks up the filesystem (e.g. into a
+    // sibling repo when running under IntelliJ's Gradle integration), which can fail Gradle's input
+    // snapshotting on socket files like a git fsmonitor daemon IPC socket.
+    dotGitDirectory = layout.projectDirectory.dir(".git")
     keys = listOf("git.branch", "git.commit.id", "git.commit.id.abbrev", "git.commit.time", "git.build.version")
 }
 
