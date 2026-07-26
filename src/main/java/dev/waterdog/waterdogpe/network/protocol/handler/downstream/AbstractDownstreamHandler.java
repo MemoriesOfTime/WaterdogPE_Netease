@@ -32,10 +32,11 @@ import org.cloudburstmc.protocol.bedrock.data.command.CommandEnumConstraint;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandEnumData;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleNamedDefinition;
-import org.cloudburstmc.protocol.bedrock.definition.NamedDefinition;
-import org.cloudburstmc.protocol.bedrock.definition.SimpleDefinitionRegistry;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.*;
+import org.cloudburstmc.protocol.common.NamedDefinition;
+import org.cloudburstmc.protocol.common.PacketSignal;
+import org.cloudburstmc.protocol.common.SimpleDefinitionRegistry;
 
 import java.util.*;
 import java.util.function.Consumer;
@@ -64,7 +65,7 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
     }
 
     @Override
-    public PacketSignal handle(ItemRegistryPacket packet) {
+    public PacketSignal handle(ItemComponentPacket packet) {
         if (!this.player.acceptItemComponentPacket()) {
             return Signals.CANCEL;
         }
@@ -113,20 +114,20 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         ListIterator<CommandData> iterator = packet.getCommands().listIterator();
         while (iterator.hasNext()) {
             CommandData command = iterator.next();
-            if (command.aliases() != null) {
+            if (command.getAliases() != null) {
                 continue;
             }
 
             Map<String, Set<CommandEnumConstraint>> aliases = new LinkedHashMap<>();
-            aliases.put(command.name(), EnumSet.of(CommandEnumConstraint.ALLOW_ALIASES));
+            aliases.put(command.getName(), EnumSet.of(CommandEnumConstraint.ALLOW_ALIASES));
 
-            iterator.set(new CommandData(command.name(),
-                    command.description(),
-                    command.flags(),
-                    command.permission(),
-                    new CommandEnumData(command.name() + "_aliases", aliases, false),
-                    command.overloads(),
-                    command.subcommands()));
+            iterator.set(new CommandData(command.getName(),
+                    command.getDescription(),
+                    command.getFlags(),
+                    command.getPermission(),
+                    new CommandEnumData(command.getName() + "_aliases", aliases, false),
+                    command.getSubcommands(),
+                    command.getOverloads()));
         }
         return PacketSignal.HANDLED;
     }
@@ -194,7 +195,7 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         SimpleDefinitionRegistry.Builder<ItemDefinition> itemRegistry = SimpleDefinitionRegistry.builder();
         IntSet runtimeIds = new IntOpenHashSet();
         for (ItemDefinition definition : definitions) {
-            if (runtimeIds.add(definition.runtimeId())) {
+            if (runtimeIds.add(definition.getRuntimeId())) {
                 itemRegistry.add(definition);
             } else {
                 player.getLogger().warning("[{}|{}] has duplicate item definition: {}", this.player.getName(), this.connection.getServerInfo().getServerName(), definition);

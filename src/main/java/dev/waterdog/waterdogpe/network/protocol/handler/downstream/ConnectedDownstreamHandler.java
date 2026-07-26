@@ -15,25 +15,21 @@
 
 package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 
+import dev.waterdog.waterdogpe.event.defaults.FastTransferRequestEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
+import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.handler.PluginPacketHandler;
-import org.cloudburstmc.protocol.bedrock.PacketDirection;
-import org.cloudburstmc.protocol.bedrock.packet.*;
-import dev.waterdog.waterdogpe.event.defaults.FastTransferRequestEvent;
-import dev.waterdog.waterdogpe.event.defaults.PostTransferCompleteEvent;
-import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
-import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
-
-import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
+import org.cloudburstmc.protocol.bedrock.PacketDirection;
+import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
+import org.cloudburstmc.protocol.bedrock.packet.DisconnectPacket;
+import org.cloudburstmc.protocol.bedrock.packet.TransferPacket;
+import org.cloudburstmc.protocol.common.PacketSignal;
 
 import static dev.waterdog.waterdogpe.network.protocol.Signals.mergeSignals;
-import static dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils.injectEntityImmobile;
-import static dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils.injectInputLocks;
 
 public class ConnectedDownstreamHandler extends AbstractDownstreamHandler {
 

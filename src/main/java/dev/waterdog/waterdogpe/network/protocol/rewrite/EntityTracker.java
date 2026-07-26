@@ -14,13 +14,14 @@
  */
 
 package dev.waterdog.waterdogpe.network.protocol.rewrite;
+
+import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
+import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import org.cloudburstmc.protocol.bedrock.data.HudVisibility;
 import org.cloudburstmc.protocol.bedrock.data.ScoreInfo;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityLinkData;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
-import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
+import org.cloudburstmc.protocol.common.PacketSignal;
 
 import java.util.List;
 
@@ -141,10 +142,10 @@ public class EntityTracker implements BedrockPacketHandler {
     }
 
     private void handleEntityLink(EntityLinkData entityLink) {
-        if (entityLink.type() == EntityLinkData.Type.REMOVE) {
-            this.player.getEntityLinks().remove(entityLink.from());
+        if (entityLink.getType() == EntityLinkData.Type.REMOVE) {
+            this.player.getEntityLinks().remove(entityLink.getFrom());
         } else {
-            this.player.getEntityLinks().put(entityLink.from(), entityLink.to());
+            this.player.getEntityLinks().put(entityLink.getFrom(), entityLink.getTo());
         }
     }
 

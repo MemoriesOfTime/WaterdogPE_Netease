@@ -94,8 +94,8 @@ public abstract class Command {
                 Collections.emptySet(),
                 CommandPermission.ANY,
                 new CommandEnumData(this.name + "_aliases", aliases, false),
-                overloads,
-                Collections.emptyList());
+                Collections.emptyList(),
+                overloads);
     }
 
     protected CommandOverloadData[] buildCommandOverloads() {

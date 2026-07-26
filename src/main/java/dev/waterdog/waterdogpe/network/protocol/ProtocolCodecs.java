@@ -100,7 +100,7 @@ public class ProtocolCodecs {
         HANDLED_PACKETS.add(DebugInfoPacket.class);
         HANDLED_PACKETS.add(PacketViolationWarningPacket.class);
         HANDLED_PACKETS.add(AnimateEntityPacket.class);
-        HANDLED_PACKETS.add(ItemRegistryPacket.class);
+        HANDLED_PACKETS.add(ItemComponentPacket.class);
         HANDLED_PACKETS.add(NpcDialoguePacket.class);
         HANDLED_PACKETS.add(BiomeDefinitionListPacket.class);
         HANDLED_PACKETS.add(ChangeMobPropertyPacket.class);
@@ -127,6 +127,7 @@ public class ProtocolCodecs {
         HANDLED_PACKETS.add(ContainerOpenPacket.class);
         HANDLED_PACKETS.add(ContainerClosePacket.class);
         HANDLED_PACKETS.add(SetTimePacket.class);
+        HANDLED_PACKETS.add(DebugDrawerPacket.class);
     }
 
     private static final List<ProtocolCodecUpdater> UPDATERS = new ObjectArrayList<>();

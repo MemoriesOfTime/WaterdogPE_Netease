@@ -70,6 +70,8 @@ dependencies {
         // Use the MOT RakNet fork instead of the cloudburstmc one bundled here.
         exclude(group = "org.cloudburstmc.netty", module = "netty-transport-raknet")
     }
+    // NetEase (China) client protocol support on top of the CloudburstMC upstream codec.
+    implementation(libs.netease.protocol.extension)
     implementation(libs.netty.transport.raknet)
     // Pulled in transitively by netty-transport-raknet for PROXY protocol support;
     // pinned here to keep it aligned with the rest of Netty.

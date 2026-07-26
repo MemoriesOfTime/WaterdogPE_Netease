@@ -15,7 +15,7 @@
 
 package dev.waterdog.waterdogpe.network.protocol;
 
-import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
+import org.cloudburstmc.protocol.common.PacketSignal;
 
 public class Signals {
 

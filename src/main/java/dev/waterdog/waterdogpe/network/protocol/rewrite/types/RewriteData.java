@@ -17,15 +17,15 @@ package dev.waterdog.waterdogpe.network.protocol.rewrite.types;
 
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
+import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
 import lombok.Getter;
 import lombok.Setter;
-import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
 import org.cloudburstmc.math.vector.Vector2f;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
 import org.cloudburstmc.protocol.bedrock.data.BlockPropertyData;
 import org.cloudburstmc.protocol.bedrock.data.GameRuleData;
-import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
+import org.cloudburstmc.protocol.common.PacketSignal;
 
 import java.util.List;
 import java.util.function.LongConsumer;

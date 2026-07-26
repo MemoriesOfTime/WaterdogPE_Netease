@@ -17,8 +17,8 @@ package dev.waterdog.waterdogpe.plugin;
 
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.WaterdogPE;
-import dev.waterdog.waterdogpe.utils.config.Configuration;
 import dev.waterdog.waterdogpe.utils.FileUtils;
+import dev.waterdog.waterdogpe.utils.config.Configuration;
 import dev.waterdog.waterdogpe.utils.config.YamlConfig;
 import dev.waterdog.waterdogpe.utils.exceptions.PluginChangeStateException;
 import lombok.Getter;
@@ -29,7 +29,7 @@ import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.AppenderRef;
 import org.apache.logging.log4j.core.config.LoggerConfig;
-import org.cloudburstmc.protocol.bedrock.util.Preconditions;
+import org.cloudburstmc.protocol.common.util.Preconditions;
 
 import java.io.File;
 import java.io.IOException;

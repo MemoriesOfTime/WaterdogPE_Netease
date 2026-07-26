@@ -26,7 +26,7 @@ import io.netty.buffer.Unpooled;
 import lombok.Getter;
 import org.cloudburstmc.protocol.bedrock.data.ResourcePackType;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import org.cloudburstmc.protocol.bedrock.util.Preconditions;
+import org.cloudburstmc.protocol.common.util.Preconditions;
 
 import java.io.File;
 import java.io.IOException;
@@ -39,15 +39,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 public class PackManager {
 
@@ -453,7 +445,7 @@ public class PackManager {
 
     private ResourcePacksInfoPacket.Entry createInfoEntry(ResourcePack pack, String cdnUrl, boolean addonPack) {
         return new ResourcePacksInfoPacket.Entry(pack.getPackId(), pack.getVersion().toString(),
-                pack.getPackSize(), pack.getContentKey(), "", pack.getContentKey().isEmpty() ? "" : pack.getPackId().toString(), false, false, cdnUrl, addonPack);
+                pack.getPackSize(), pack.getContentKey(), "", pack.getContentKey().isEmpty() ? "" : pack.getPackId().toString(), false, false, addonPack, cdnUrl);
     }
 
     /**
@@ -477,7 +469,7 @@ public class PackManager {
     private ResourcePacksInfoPacket.Entry stripCdnUrl(ResourcePacksInfoPacket.Entry entry) {
         return new ResourcePacksInfoPacket.Entry(entry.getPackId(), entry.getPackVersion(), entry.getPackSize(),
                 entry.getContentKey(), entry.getSubPackName(), entry.getContentId(), entry.isScripting(),
-                entry.isRaytracingCapable(), null, entry.isAddonPack());
+                entry.isRaytracingCapable(), entry.isAddonPack(), null);
     }
 
     /**
