@@ -31,6 +31,8 @@ import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.common.PacketSignal;
 
+import static dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils.injectAirSubChunkResponse;
+
 /**
  * Main handler for handling packets received from upstream.
  */
@@ -70,14 +72,31 @@ public class ConnectedUpstreamHandler extends AbstractUpstreamHandler implements
     }
 
     @Override
+    public PacketSignal handle(SubChunkRequestPacket packet) {
+        // Only the fake intermediate chunks (phase 1) are answered by us. On the target hop (phase 2) the new
+        // server is wired to the client and provides the real chunks, so its sub-chunk requests must pass through.
+        TransferCallback callback = this.player.getRewriteData().getTransferCallback();
+        if (callback == null || callback.getPhase() != TransferCallback.TransferPhase.PHASE_1) {
+            return PacketSignal.UNHANDLED;
+        }
+        injectAirSubChunkResponse(this.player.getConnection(), packet);
+        return Signals.CANCEL;
+    }
+
+    @Override
     public final PacketSignal handle(TextPacket packet) {
         PlayerChatEvent event = new PlayerChatEvent(this.player, packet.getMessage());
         ProxyServer.getInstance().getEventManager().callEvent(event);
-        packet.setMessage(event.getMessage());
+
         if (event.isCancelled()) {
             return Signals.CANCEL;
         }
-        return PacketSignal.HANDLED;
+
+        if (event.isChanged()) {
+            packet.setMessage(event.getMessage());
+            return PacketSignal.HANDLED;
+        }
+        return PacketSignal.UNHANDLED;
     }
 
     @Override

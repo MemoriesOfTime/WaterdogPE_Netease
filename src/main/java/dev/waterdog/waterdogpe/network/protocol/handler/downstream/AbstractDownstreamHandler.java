@@ -16,11 +16,12 @@
 package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 
 import dev.waterdog.waterdogpe.command.Command;
-import dev.waterdog.waterdogpe.event.defaults.PostTransferCompleteEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.handler.ProxyPacketHandler;
+import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
+import dev.waterdog.waterdogpe.network.protocol.registry.FakeDefinitionRegistry;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.RewriteMaps;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
@@ -55,12 +56,13 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
 
     @Override
     public PacketSignal handle(PlayStatusPacket packet) {
-        if (!this.player.acceptPlayStatus() || packet.getStatus() != PlayStatusPacket.Status.PLAYER_SPAWN) {
+        if (packet.getStatus() != PlayStatusPacket.Status.PLAYER_SPAWN) {
             return PacketSignal.UNHANDLED;
         }
-        this.player.setAcceptPlayStatus(false);
-        PostTransferCompleteEvent event = new PostTransferCompleteEvent(this.connection, this.player);
-        this.player.getProxy().getEventManager().callEvent(event);
+        TransferCallback transferCallback = player.getRewriteData().getTransferCallback();
+        if (transferCallback != null && transferCallback.getConnection() == this.connection) {
+            transferCallback.onPlayStatus();
+        }
         return PacketSignal.UNHANDLED;
     }
 
@@ -78,6 +80,12 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
 
     @Override
     public void sendProxiedBatch(BedrockBatchWrapper batch) {
+        ClientConnection current = this.player.getDownstreamConnection();
+        if (current != null && this.connection != current) {
+            // Noop. Drop batches from a downstream that is no longer the player's active one.
+            // Null check is for the initial connection.
+            return;
+        }
         if (this.player.getConnection().isConnected()) {
             this.player.getConnection().sendPacket(batch.retain());
         }
@@ -188,22 +196,21 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         return connection;
     }
 
+    protected static final String BLOCKING_ID = "minecraft:shield";
+
     protected void setItemDefinitions(Collection<ItemDefinition> definitions) {
         BedrockCodecHelper codecHelper = this.player.getConnection()
-                .getPeer()
-                .getCodecHelper();
-        SimpleDefinitionRegistry.Builder<ItemDefinition> itemRegistry = SimpleDefinitionRegistry.builder();
-        IntSet runtimeIds = new IntOpenHashSet();
+            .getPeer()
+            .getCodecHelper();
+        FakeDefinitionRegistry<ItemDefinition> itemRegistry = FakeDefinitionRegistry.createItemRegistry();
         for (ItemDefinition definition : definitions) {
-            if (runtimeIds.add(definition.getRuntimeId())) {
-                itemRegistry.add(definition);
-            } else {
-                player.getLogger().warning("[{}|{}] has duplicate item definition: {}", this.player.getName(), this.connection.getServerInfo().getServerName(), definition);
+            if (definition.getIdentifier().equals(BLOCKING_ID)) {
+                itemRegistry.getRuntimeMap().put(definition.getRuntimeId(), definition);
+                break;
             }
         }
-        var builtRegistry = itemRegistry.build();
-        codecHelper.setItemDefinitions(builtRegistry);
-        this.connection.getCodecHelper().setItemDefinitions(builtRegistry);
+        codecHelper.setItemDefinitions(itemRegistry);
+        this.connection.getCodecHelper().setItemDefinitions(itemRegistry);
     }
 
     protected void setCameraPresetDefinitions(Collection<CameraPreset> presets) {

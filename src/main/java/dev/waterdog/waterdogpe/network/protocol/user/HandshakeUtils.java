@@ -154,7 +154,6 @@ public class HandshakeUtils {
         ChainValidationResult.IdentityData identityData = identityClaims.extraData;
         ECPublicKey identityPublicKey = (ECPublicKey) identityClaims.parsedIdentityPublicKey();
         String xuid = identityData.xuid;
-        //UUID uuid = UUID.nameUUIDFromBytes(("pocket-auth-1-xuid:" + xuid).getBytes(StandardCharsets.UTF_8));
         UUID uuid = identityData.identity;
         String minecraftId = identityData.minecraftId;
 
@@ -175,6 +174,10 @@ public class HandshakeUtils {
             ProxyConfig config = ProxyServer.getInstance().getConfiguration();
             if (config.useLoginExtras()) {
                 clientData.addProperty("Waterdog_Auth", true);
+                clientData.addProperty("Waterdog_XUID", identityData.xuid);
+                if (identityData.minecraftId != null) {
+                    clientData.addProperty("Waterdog_MID", identityData.minecraftId);
+                }
             }
         }
         // Before 1.26.20, client sends CertificateChainPayload in LoginPacket instead of TokenPayload

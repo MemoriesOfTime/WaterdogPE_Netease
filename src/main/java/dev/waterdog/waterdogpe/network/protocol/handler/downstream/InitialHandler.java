@@ -26,6 +26,7 @@ import dev.waterdog.waterdogpe.network.protocol.rewrite.BlockMap;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.BlockMapSimple;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.BlockPalette;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
+import dev.waterdog.waterdogpe.network.protocol.rewrite.types.StartGameSettings;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
@@ -49,11 +50,20 @@ public class InitialHandler extends AbstractDownstreamHandler {
     @Override
     public PacketSignal handle(PlayStatusPacket packet) {
         return this.onPlayStatus(packet, message -> {
-            ServerInfo serverInfo = this.player.getServerInfo();
+            // player.getServerInfo() is still null on the initial connection, use the failed target.
+            ServerInfo serverInfo = this.connection.getServerInfo();
             if (!this.player.sendToFallback(serverInfo, ReconnectReason.TRANSFER_FAILED, message)) {
                 this.player.disconnect(new TranslationContainer("waterdog.downstream.transfer.failed", serverInfo.getServerName(), message));
             }
         }, this.connection);
+    }
+
+    @Override
+    public PacketSignal handle(DisconnectPacket packet) {
+        // Kicked during the initial login: recover through the shared failure path so the
+        // kick message is not lost waiting for the channel close.
+        this.player.onDownstreamFailure(this.connection, ReconnectReason.SERVER_KICK, packet.getKickMessage());
+        return Signals.CANCEL;
     }
 
     @Override
@@ -112,6 +122,7 @@ public class InitialHandler extends AbstractDownstreamHandler {
         rewriteData.setGameRules(packet.getGamerules());
         rewriteData.setDimension(packet.getDimensionId());
         rewriteData.setSpawnPosition(packet.getPlayerPosition());
+        rewriteData.setStartGameSettings(StartGameSettings.from(packet));
         packet.setRuntimeEntityId(rewriteData.getEntityId());
         packet.setUniqueEntityId(rewriteData.getEntityId());
         packet.setLevelName(rewriteData.getProxyName());

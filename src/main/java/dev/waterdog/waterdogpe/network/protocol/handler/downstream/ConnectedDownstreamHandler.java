@@ -26,6 +26,7 @@ import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
 import org.cloudburstmc.protocol.bedrock.PacketDirection;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.DisconnectPacket;
+import org.cloudburstmc.protocol.bedrock.packet.LevelChunkPacket;
 import org.cloudburstmc.protocol.bedrock.packet.TransferPacket;
 import org.cloudburstmc.protocol.common.PacketSignal;
 
@@ -46,6 +47,14 @@ public class ConnectedDownstreamHandler extends AbstractDownstreamHandler {
             }
         }
         return signal;
+    }
+
+    @Override
+    public PacketSignal handle(LevelChunkPacket packet) {
+        // Remember whether this server serves chunks via the sub-chunk request system so injected
+        // empty chunks match it and the client keeps requesting sub-chunks instead of breaking.
+        this.player.setSubChunkRequestMode(packet.isRequestSubChunks());
+        return PacketSignal.UNHANDLED;
     }
 
     @Override
@@ -71,10 +80,8 @@ public class ConnectedDownstreamHandler extends AbstractDownstreamHandler {
 
     @Override
     public final PacketSignal handle(DisconnectPacket packet) {
-        if (this.player.sendToFallback(this.connection.getServerInfo(), ReconnectReason.SERVER_KICK, packet.getKickMessage())) {
-            return Signals.CANCEL;
-        }
-        this.player.disconnect(new TranslationContainer("waterdog.downstream.kicked", packet.getKickMessage()));
+        // This is not really a failure
+        this.player.onDownstreamFailure(this.connection, ReconnectReason.SERVER_KICK, packet.getKickMessage());
         return Signals.CANCEL;
     }
 }
