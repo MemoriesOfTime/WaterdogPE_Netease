@@ -23,6 +23,8 @@ import it.unimi.dsi.fastutil.objects.Object2ObjectMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectObjectImmutablePair;
 import lombok.Getter;
+import org.yaml.snakeyaml.DumperOptions;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.CustomClassLoaderConstructor;
 import org.yaml.snakeyaml.representer.Representer;
@@ -38,9 +40,11 @@ public class PluginManager {
 
     public static final Yaml yamlLoader;
     static {
-        Representer representer = new Representer();
+        DumperOptions dumperOptions = new DumperOptions();
+        Representer representer = new Representer(dumperOptions);
         representer.getPropertyUtils().setSkipMissingProperties(true);
-        yamlLoader = new Yaml(new CustomClassLoaderConstructor(PluginManager.class.getClassLoader()), representer);
+        LoaderOptions loaderOptions = new LoaderOptions();
+        yamlLoader = new Yaml(new CustomClassLoaderConstructor(PluginManager.class.getClassLoader(), loaderOptions), representer, dumperOptions);
     }
 
     @Getter

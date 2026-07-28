@@ -14,8 +14,8 @@ lombok = "1.18.30"
 netty-bom = { module = "io.netty:netty-bom", version.ref = "netty" }
 bugsnag = { module = "com.bugsnag:bugsnag", version = "[3.0,4.0)" }
 bstats-base = { module = "org.bstats:bstats-base", version = "3.0.1" }
-yamler-core = { module = "net.cubespace:Yamler-Core", version = "2.4.1-20240423.205119-1" }
-snakeyaml = { module = "org.yaml:snakeyaml", version = "1.32" }
+yamler-core = { module = "net.cubespace:Yamler-Core", version = "2.5.0-20260728.033210-1" }
+snakeyaml = { module = "org.yaml:snakeyaml", version = "2.6" }
 gson = { module = "com.google.code.gson:gson", version = "2.10.1" }
 fastutil = { module = "it.unimi.dsi:fastutil", version = "8.5.12" }
 lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
