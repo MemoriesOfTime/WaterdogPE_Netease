@@ -30,8 +30,8 @@ import net.cubespace.Yamler.Config.InvalidConfigurationException;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ServiceLoader.Provider;
 import java.util.*;
+import java.util.ServiceLoader.Provider;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Getter
@@ -279,7 +279,94 @@ public class ConfigurationManager {
                 this.proxy.getLogger().error("Can not save lang file!", e);
             }
         }
+        // Backfill: append any keys present in the bundled jar resource but missing from the
+        // on-disk file. This keeps operator customizations intact while making newly added
+        // translation keys (from an upgraded jar) visible and editable without deleting the file.
+        this.backfillLanguageFile(langFile);
         this.langConfig = new LangConfig(langFile);
+    }
+
+    /**
+     * Append translation keys defined in the bundled {@code lang.ini} resource that are absent
+     * from the on-disk file. The on-disk file is never rewritten for keys it already contains,
+     * so existing values (including operator edits) are preserved.
+     */
+    private void backfillLanguageFile(File langFile) {
+        String resourceContent;
+        try (java.io.InputStream in = ConfigurationManager.class.getClassLoader().getResourceAsStream("lang.ini")) {
+            if (in == null) {
+                return; // nothing bundled to backfill from
+            }
+            resourceContent = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            this.proxy.getLogger().error("Can not read bundled lang.ini resource", e);
+            return;
+        }
+
+        Set<String> resourceKeys = new LinkedHashSet<>();
+        Map<String, String> resourceEntries = new LinkedHashMap<>();
+        for (String line : resourceContent.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty() || trimmed.charAt(0) == '#') {
+                continue;
+            }
+            int eq = trimmed.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            String key = trimmed.substring(0, eq);
+            resourceKeys.add(key);
+            resourceEntries.put(key, trimmed.substring(eq + 1));
+        }
+        if (resourceKeys.isEmpty()) {
+            return;
+        }
+
+        Set<String> diskKeys = new HashSet<>();
+        try {
+            if (langFile.exists()) {
+                String diskContent = FileUtils.readFile(langFile);
+                for (String line : diskContent.split("\n")) {
+                    String trimmed = line.trim();
+                    if (trimmed.isEmpty() || trimmed.charAt(0) == '#') {
+                        continue;
+                    }
+                    int eq = trimmed.indexOf('=');
+                    if (eq <= 0) {
+                        continue;
+                    }
+                    diskKeys.add(trimmed.substring(0, eq));
+                }
+            }
+        } catch (IOException e) {
+            this.proxy.getLogger().error("Can not read existing lang file for backfill", e);
+            return;
+        }
+
+        // Keys present in the jar but missing on disk → append them.
+        List<String> missing = new ArrayList<>();
+        for (String key : resourceKeys) {
+            if (!diskKeys.contains(key)) {
+                missing.add(key);
+            }
+        }
+        if (missing.isEmpty()) {
+            return;
+        }
+
+        StringBuilder appendage = new StringBuilder();
+        appendage.append("\n\n# ---- appended by the proxy on startup ----\n");
+        for (String key : missing) {
+            appendage.append(key).append('=').append(resourceEntries.get(key)).append('\n');
+        }
+        try (java.io.FileWriter writer = new java.io.FileWriter(langFile, true)) {
+            writer.write(appendage.toString());
+        } catch (IOException e) {
+            this.proxy.getLogger().error("Failed to backfill missing lang keys into " + langFile, e);
+            return;
+        }
+        this.proxy.getLogger().info("Added {} new translation key(s) to lang.ini: {}",
+                missing.size(), String.join(", ", missing));
     }
 
     public <T> T loadServiceProvider(String providerName, Class<T> clazz) {

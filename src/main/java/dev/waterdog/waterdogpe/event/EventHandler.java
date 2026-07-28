@@ -19,12 +19,10 @@ import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.logger.MainLogger;
 import dev.waterdog.waterdogpe.utils.exceptions.EventException;
 
-import java.util.ArrayList;
-import java.util.EnumMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * Internal EventHandler Class
@@ -114,5 +112,39 @@ public class EventHandler {
             // Handler is not registered yet
             handlerList.add(handler);
         }
+    }
+
+    /**
+     * Removes all handlers matching the given predicate.
+     * Used by plugin reload to drop subscriptions whose lambda/class belongs to an unloaded plugin.
+     *
+     * @param matcher predicate that returns true for handlers that should be removed
+     * @return number of handlers removed
+     */
+    public int unsubscribe(Predicate<Consumer<Event>> matcher) {
+        int removed = 0;
+        for (EventPriority priority : EventPriority.values()) {
+            List<Consumer<Event>> handlerList = this.priority2handlers.get(priority);
+            if (handlerList == null) {
+                continue;
+            }
+            for (Iterator<Consumer<Event>> it = handlerList.iterator(); it.hasNext(); ) {
+                if (matcher.test(it.next())) {
+                    it.remove();
+                    removed++;
+                }
+            }
+            if (handlerList.isEmpty()) {
+                this.priority2handlers.remove(priority);
+            }
+        }
+        return removed;
+    }
+
+    /**
+     * @return true when no handlers remain across any priority
+     */
+    public boolean isEmpty() {
+        return this.priority2handlers.isEmpty();
     }
 }

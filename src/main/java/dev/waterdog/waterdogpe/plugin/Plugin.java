@@ -95,12 +95,12 @@ public abstract class Plugin {
         config.addLogger(this.getName(), logger);
 
         // Plugin class logger
-        LoggerConfig clazzLogger = LoggerConfig.createLogger(false, logLevel, this.getClass().getCanonicalName(),
+        LoggerConfig clazzLogger = LoggerConfig.createLogger(false, logLevel, this.getClass().getName(),
                 "", appenderRefs, null, config, null);
         clazzLogger.getAppenders().keySet().forEach(clazzLogger::removeAppender);
         clazzLogger.addAppender(config.getAppender("File-Plugin"), null, null);
         clazzLogger.addAppender(config.getAppender("Console-Plugin"), logLevel, null);
-        config.addLogger(this.getClass().getCanonicalName(), clazzLogger);
+        config.addLogger(this.getClass().getName(), clazzLogger);
 
         context.updateLoggers();
         return LogManager.getLogger(this.getName());
@@ -124,6 +124,22 @@ public abstract class Plugin {
      * Also gets called when the plugin state changes to disabled
      */
     public void onDisable() {
+    }
+
+    /**
+     * Called after {@link #onDisable()} when the plugin is being hot-reloaded via
+     * {@code /wdreloadplugin}, just before its ClassLoader is closed and its classes are
+     * released. Use this to release any external resource that is not naturally tied to the
+     * enable/disable cycle (long-lived database pools, native handles, registered platform
+     * hooks, etc.). At this point the plugin is already disabled and will not receive further
+     * events or scheduled tasks.
+     *
+     * <p>Implementations should be idempotent and fast; failures here are logged but do not
+     * abort the unload. Note that the proxy cannot guarantee collection of the plugin's classes
+     * if any other component (the JVM, third-party libraries, application threads) still holds
+     * a strong reference — clean those up here.</p>
+     */
+    public void onUnload() {
     }
 
     /**
