@@ -15,6 +15,7 @@
 
 package dev.waterdog.waterdogpe.player;
 
+import dev.mot.protocol.extension.packet.NetEaseTextPacket;
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.command.CommandSender;
 import dev.waterdog.waterdogpe.event.defaults.*;
@@ -744,6 +745,23 @@ public class ProxiedPlayer implements CommandSender {
     }
 
     /**
+     * Creates a {@link TextPacket} appropriate for this player's client.
+     * <p>
+     * NetEase clients use a protocol variant ({@link NetEaseTextPacket}) that carries an extra
+     * trailing string field for {@code CHAT} and {@code POPUP} text types. Returning the correct
+     * runtime type here ensures the field is serialized with its proper (empty) value instead of
+     * relying on the codec's fallback, keeping the on-wire packet semantically complete.
+     *
+     * @param type the text type of the packet
+     * @return a {@code TextPacket} instance suitable for the player's client
+     */
+    private TextPacket createTextPacket(TextPacket.Type type) {
+        TextPacket packet = this.isNetEaseClient() ? new NetEaseTextPacket() : new TextPacket();
+        packet.setType(type);
+        return packet;
+    }
+
+    /**
      * Sends a message to the player, which will be displayed in the chat window
      *
      * @param message
@@ -754,8 +772,7 @@ public class ProxiedPlayer implements CommandSender {
             return; // Client wont accept empty string
         }
 
-        TextPacket packet = new TextPacket();
-        packet.setType(TextPacket.Type.RAW);
+        TextPacket packet = this.createTextPacket(TextPacket.Type.RAW);
         packet.setXuid(this.getXuid());
         packet.setMessage(message);
         this.sendPacket(packet);
@@ -785,8 +802,7 @@ public class ProxiedPlayer implements CommandSender {
             return;
         }
 
-        TextPacket packet = new TextPacket();
-        packet.setType(TextPacket.Type.CHAT);
+        TextPacket packet = this.createTextPacket(TextPacket.Type.CHAT);
         packet.setSourceName(this.getName());
         packet.setXuid(this.getXuid());
         packet.setMessage(message);
@@ -800,8 +816,7 @@ public class ProxiedPlayer implements CommandSender {
      * @param subtitle the subtitle, which will be displayed below the popup
      */
     public void sendPopup(String message, String subtitle) {
-        TextPacket packet = new TextPacket();
-        packet.setType(TextPacket.Type.POPUP);
+        TextPacket packet = this.createTextPacket(TextPacket.Type.POPUP);
         packet.setMessage(message);
         packet.setXuid(this.getXuid());
         this.sendPacket(packet);
@@ -813,8 +828,7 @@ public class ProxiedPlayer implements CommandSender {
      * @param message the tip message to send
      */
     public void sendTip(String message) {
-        TextPacket packet = new TextPacket();
-        packet.setType(TextPacket.Type.TIP);
+        TextPacket packet = this.createTextPacket(TextPacket.Type.TIP);
         packet.setMessage(message);
         packet.setXuid(this.getXuid());
         this.sendPacket(packet);
