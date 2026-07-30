@@ -15,6 +15,7 @@
 
 package dev.waterdog.waterdogpe;
 
+import dev.mot.protocol.extension.packet.*;
 import dev.waterdog.waterdogpe.command.*;
 import dev.waterdog.waterdogpe.command.utils.CommandUtils;
 import dev.waterdog.waterdogpe.console.TerminalConsole;
@@ -239,6 +240,18 @@ public class ProxyServer {
             if (this.getConfiguration().injectCommands()) {
                 ProtocolCodecs.addUpdater(new CodecUpdaterCommands());
             }
+            // NetEase protocol-extension packets are registered in the extension codecs via
+            // aliasPacket/registerPacket. retainPackets keys by exact Class, so every extension
+            // packet class must be explicitly retained or buildCodec() silently drops its
+            // definition and encoding the packet later throws NullPointerException.
+            ProtocolCodecs.addHandledPacket(NetEaseTextPacket.class);
+            ProtocolCodecs.addHandledPacket(NetEasePlayerAuthInputPacket.class);
+            ProtocolCodecs.addHandledPacket(NetEasePlayerEnchantOptionsPacket.class);
+            ProtocolCodecs.addHandledPacket(NetEaseContainerOpenPacket.class);
+            ProtocolCodecs.addHandledPacket(PyRpcPacket.class);
+            ProtocolCodecs.addHandledPacket(StoreBuySuccessPacket.class);
+            ProtocolCodecs.addHandledPacket(NetEaseJsonPacket.class);
+            ProtocolCodecs.addHandledPacket(ConfirmSkinPacket.class);
 
             for (ProtocolVersion version : ProtocolVersion.values()) {
                 version.setBedrockCodec(ProtocolCodecs.buildCodec(version.getDefaultCodec()));

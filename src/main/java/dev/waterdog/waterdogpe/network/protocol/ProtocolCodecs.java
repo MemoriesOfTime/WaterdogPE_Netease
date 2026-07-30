@@ -25,7 +25,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ProtocolCodecs {
-    
+
+    /**
+     * Packet classes the proxy must keep registered in every built codec. {@link #DEFAULT_UPDATER}
+     * retains exactly these classes (plus any added via {@link #addHandledPacket(Class)}) via
+     * {@link BedrockCodec.Builder#retainPackets(Class[]) retainPackets}.
+     * <p>
+     * Note: {@code retainPackets} keys the codec's internal map by exact {@link Class}, so any class
+     * registered through {@code aliasPacket} (e.g. {@code NetEaseTextPacket} aliasing
+     * {@code TextPacket}) must be listed here explicitly, otherwise its definition is silently
+     * dropped during the fast-codec build and encoding the packet throws NPE.
+     */
     private static final List<Class<? extends BedrockPacket>> HANDLED_PACKETS = new ArrayList<>();
     static {
         HANDLED_PACKETS.add(LoginPacket.class);
@@ -134,9 +144,26 @@ public class ProtocolCodecs {
     }
 
     private static final List<ProtocolCodecUpdater> UPDATERS = new ObjectArrayList<>();
-    private static final ProtocolCodecUpdater DEFAULT_UPDATER = (builder, codec) -> builder.retainPackets(HANDLED_PACKETS.toArray(new Class[]{}));
+    private static final ProtocolCodecUpdater DEFAULT_UPDATER = (builder, codec) ->
+            builder.retainPackets(HANDLED_PACKETS.toArray(new Class[]{}));
     static {
         UPDATERS.add(new CodecUpdater419());
+    }
+
+    /**
+     * Registers an additional packet class that must survive {@link #buildCodec}'s
+     * {@code retainPackets} step.
+     * <p>
+     * Intended for protocol-extension packets (e.g. NetEase variants registered through
+     * {@code aliasPacket}) whose exact runtime class is not part of {@link #HANDLED_PACKETS}.
+     * Must be called before {@link dev.waterdog.waterdogpe.ProxyServer} builds the fast codecs.
+     *
+     * @param packetClass the exact packet class to retain
+     */
+    public static void addHandledPacket(Class<? extends BedrockPacket> packetClass) {
+        if (!HANDLED_PACKETS.contains(packetClass)) {
+            HANDLED_PACKETS.add(packetClass);
+        }
     }
 
     public static void addUpdater(ProtocolCodecUpdater updater) {
