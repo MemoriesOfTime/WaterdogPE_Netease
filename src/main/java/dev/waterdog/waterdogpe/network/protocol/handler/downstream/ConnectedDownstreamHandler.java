@@ -15,19 +15,15 @@
 
 package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 
-import dev.waterdog.waterdogpe.event.defaults.FastTransferRequestEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
 import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.handler.PluginPacketHandler;
-import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
 import org.cloudburstmc.protocol.bedrock.PacketDirection;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.DisconnectPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LevelChunkPacket;
-import org.cloudburstmc.protocol.bedrock.packet.TransferPacket;
 import org.cloudburstmc.protocol.common.PacketSignal;
 
 import static dev.waterdog.waterdogpe.network.protocol.Signals.mergeSignals;
@@ -54,27 +50,6 @@ public class ConnectedDownstreamHandler extends AbstractDownstreamHandler {
         // Remember whether this server serves chunks via the sub-chunk request system so injected
         // empty chunks match it and the client keeps requesting sub-chunks instead of breaking.
         this.player.setSubChunkRequestMode(packet.isRequestSubChunks());
-        return PacketSignal.UNHANDLED;
-    }
-
-    @Override
-    public PacketSignal handle(TransferPacket packet) {
-        if (!this.player.getProxy().getConfiguration().useFastTransfer()) {
-            return PacketSignal.UNHANDLED;
-        }
-
-        ServerInfo serverInfo = this.player.getProxy().getServerInfo(packet.getAddress());
-        if (serverInfo == null) {
-            serverInfo = this.player.getProxy().getServerInfo(packet.getAddress(), packet.getPort());
-        }
-
-        FastTransferRequestEvent event = new FastTransferRequestEvent(serverInfo, this.player, packet.getAddress(), packet.getPort());
-        this.player.getProxy().getEventManager().callEvent(event);
-
-        if (!event.isCancelled() && event.getServerInfo() != null) {
-            this.player.connect(event.getServerInfo());
-            return Signals.CANCEL;
-        }
         return PacketSignal.UNHANDLED;
     }
 

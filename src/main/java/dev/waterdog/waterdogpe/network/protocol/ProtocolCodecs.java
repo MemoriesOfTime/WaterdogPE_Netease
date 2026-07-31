@@ -157,6 +157,13 @@ public class ProtocolCodecs {
      * Intended for protocol-extension packets (e.g. NetEase variants registered through
      * {@code aliasPacket}) whose exact runtime class is not part of {@link #HANDLED_PACKETS}.
      * Must be called before {@link dev.waterdog.waterdogpe.ProxyServer} builds the fast codecs.
+     * <p>
+     * Retaining a class also keeps its id decodable, so only register packets the proxy actually
+     * constructs, and prefer aliases of packets already listed above: those share the vanilla
+     * packet's id, which is decoded anyway. Registering a packet with an id that is otherwise
+     * unhandled makes the proxy decode it, and a deserialization failure or recipient mismatch
+     * there costs the packet, its whole batch or the connection instead of passing through as an
+     * {@code UnknownPacket}.
      *
      * @param packetClass the exact packet class to retain
      */

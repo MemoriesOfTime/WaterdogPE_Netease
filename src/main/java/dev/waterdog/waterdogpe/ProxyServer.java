@@ -15,7 +15,8 @@
 
 package dev.waterdog.waterdogpe;
 
-import dev.mot.protocol.extension.packet.*;
+import dev.mot.protocol.extension.packet.NetEaseContainerOpenPacket;
+import dev.mot.protocol.extension.packet.NetEaseTextPacket;
 import dev.waterdog.waterdogpe.command.*;
 import dev.waterdog.waterdogpe.command.utils.CommandUtils;
 import dev.waterdog.waterdogpe.console.TerminalConsole;
@@ -241,17 +242,18 @@ public class ProxyServer {
                 ProtocolCodecs.addUpdater(new CodecUpdaterCommands());
             }
             // NetEase protocol-extension packets are registered in the extension codecs via
-            // aliasPacket/registerPacket. retainPackets keys by exact Class, so every extension
-            // packet class must be explicitly retained or buildCodec() silently drops its
-            // definition and encoding the packet later throws NullPointerException.
+            // aliasPacket/registerPacket. retainPackets keys by exact Class, so an extension packet
+            // the proxy itself constructs must be explicitly retained or buildCodec() silently drops
+            // its definition and encoding the packet later throws NullPointerException.
+            //
+            // Only retain aliases of packets already present in HANDLED_PACKETS. Retaining a packet
+            // that carries its own id (PyRpc/StoreBuySuccess/NetEaseJson/ConfirmSkin) or aliases an
+            // unhandled vanilla packet (PlayerAuthInput/PlayerEnchantOptions) also makes that id
+            // decodable, which the proxy has no reason to do and which turns every deserialization
+            // failure or recipient mismatch into a dropped packet, a dropped batch or a dropped
+            // connection. Those ids must stay UnknownPacket passthrough.
             ProtocolCodecs.addHandledPacket(NetEaseTextPacket.class);
-            ProtocolCodecs.addHandledPacket(NetEasePlayerAuthInputPacket.class);
-            ProtocolCodecs.addHandledPacket(NetEasePlayerEnchantOptionsPacket.class);
             ProtocolCodecs.addHandledPacket(NetEaseContainerOpenPacket.class);
-            ProtocolCodecs.addHandledPacket(PyRpcPacket.class);
-            ProtocolCodecs.addHandledPacket(StoreBuySuccessPacket.class);
-            ProtocolCodecs.addHandledPacket(NetEaseJsonPacket.class);
-            ProtocolCodecs.addHandledPacket(ConfirmSkinPacket.class);
 
             for (ProtocolVersion version : ProtocolVersion.values()) {
                 version.setBedrockCodec(ProtocolCodecs.buildCodec(version.getDefaultCodec()));
