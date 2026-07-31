@@ -15,6 +15,7 @@
 
 package dev.waterdog.waterdogpe.network.connection.codec.initializer;
 
+import dev.mot.protocol.extension.NetEaseCompression;
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.network.connection.codec.batch.BedrockBatchDecoder;
 import dev.waterdog.waterdogpe.network.connection.codec.batch.BedrockBatchEncoder;
@@ -29,7 +30,6 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
 import lombok.AllArgsConstructor;
 import lombok.extern.log4j.Log4j2;
-import org.allaymc.protocol.extension.NetEaseCompression;
 import org.cloudburstmc.netty.channel.raknet.config.RakChannelOption;
 import org.cloudburstmc.netty.channel.raknet.packet.RakMessage;
 import org.cloudburstmc.protocol.bedrock.BedrockPeer;
@@ -67,7 +67,7 @@ public abstract class ProxiedSessionInitializer<T extends BedrockSession> extend
                 .addLast(BedrockBatchDecoder.NAME, BATCH_DECODER)
                 .addLast(BedrockBatchEncoder.NAME, new BedrockBatchEncoder())
                 .addLast(BedrockPacketCodec.NAME, getPacketCodec(rakVersion, neteaseSupport))
-                .addLast(BedrockPeer.NAME, new ProxiedBedrockPeer(channel, this::createSession));
+                .addLast(BedrockPeer.NAME, new ProxiedBedrockPeer(channel, this::createSession, proxy));
     }
 
     protected final T createSession(BedrockPeer peer, int subClientId) {

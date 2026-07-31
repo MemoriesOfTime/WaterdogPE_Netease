@@ -18,7 +18,6 @@ package dev.waterdog.waterdogpe.network.connection.codec.client;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import org.cloudburstmc.netty.channel.raknet.RakDisconnectReason;
@@ -57,13 +56,6 @@ public class ClientEventHandler extends ChannelInboundHandlerAdapter {
         }
 
         this.player.getLogger().warning("[" + connection.getSocketAddress() + "|" + this.player.getName() + "] - exception caught", cause);
-        this.connection.disconnect();
-
-        TranslationContainer msg = new TranslationContainer("waterdog.downstream.down", this.connection.getServerInfo().getServerName(), cause.getMessage());
-        if (this.player.sendToFallback(this.connection.getServerInfo(), ReconnectReason.EXCEPTION, cause.getMessage())) {
-            this.player.sendMessage(msg);
-        } else {
-            this.player.disconnect(msg);
-        }
+        this.player.onDownstreamFailure(this.connection, ReconnectReason.EXCEPTION, cause.getMessage());
     }
 }

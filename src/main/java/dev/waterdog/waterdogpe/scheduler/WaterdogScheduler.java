@@ -21,7 +21,9 @@ import dev.waterdog.waterdogpe.utils.exceptions.SchedulerException;
 import io.netty.util.internal.PlatformDependent;
 import lombok.Getter;
 
-import java.util.*;
+import java.util.LinkedList;
+import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -153,6 +155,33 @@ public class WaterdogScheduler {
                 // Ignore
             }
         }
+    }
+
+    /**
+     * Cancel and remove every task whose Runnable was defined by the given ClassLoader.
+     * Used during plugin hot-reload to prevent a stale plugin from continuing to run.
+     *
+     * Note: this does not interrupt a task currently executing on the async executor; such
+     * a task will run to completion. Plugin authors should ensure their onDisable waits for
+     * in-flight async work.
+     *
+     * @param loader the ClassLoader of the plugin being unloaded
+     * @return number of tasks cancelled
+     */
+    public int cancelTasksByClassLoader(ClassLoader loader) {
+        int cancelled = 0;
+        for (Map.Entry<Integer, TaskHandler<?>> entry : new java.util.ArrayList<>(this.taskHandlerMap.entrySet())) {
+            TaskHandler<?> handler = entry.getValue();
+            Runnable task = handler.getTask();
+            ClassLoader taskLoader = task == null ? null : task.getClass().getClassLoader();
+            if (taskLoader != null && taskLoader == loader) {
+                handler.cancel();
+                this.taskHandlerMap.remove(entry.getKey());
+                cancelled++;
+            }
+        }
+        // pendingTasks is a mpsc queue; cancelled entries are skipped by runTask() via isCancelled().
+        return cancelled;
     }
 
     public int getCurrentTick() {

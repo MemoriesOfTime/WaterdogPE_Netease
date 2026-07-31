@@ -18,6 +18,7 @@ package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 import com.nimbusds.jwt.SignedJWT;
 import dev.waterdog.waterdogpe.event.defaults.ServerTransferEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
+import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
@@ -25,18 +26,24 @@ import dev.waterdog.waterdogpe.network.protocol.registry.DefinitionAggregator;
 import dev.waterdog.waterdogpe.network.protocol.registry.ServerIdMapping;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.BlockPalette;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
+import dev.waterdog.waterdogpe.network.protocol.rewrite.types.StartGameSettings;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import dev.waterdog.waterdogpe.utils.config.proxy.ProxyConfig;
 import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
+import it.unimi.dsi.fastutil.ints.Int2IntMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2LongMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
 import lombok.extern.log4j.Log4j2;
 import org.cloudburstmc.math.vector.Vector3f;
+import org.cloudburstmc.protocol.bedrock.data.GameType;
+import org.cloudburstmc.protocol.bedrock.data.HudElement;
 import org.cloudburstmc.protocol.bedrock.data.ScoreInfo;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerType;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.bedrock.util.EncryptionUtils;
 import org.cloudburstmc.protocol.common.PacketSignal;
@@ -95,10 +102,13 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
 
     @Override
     public PacketSignal handle(PlayStatusPacket packet) {
-        return this.onPlayStatus(packet, message -> {
-            this.connection.disconnect();
-            this.player.sendMessage(new TranslationContainer("waterdog.downstream.transfer.failed", this.connection.getServerInfo().getServerName(), message));
-        }, this.connection);
+        PacketSignal signal = this.onPlayStatus(packet, message -> this.player.onTransferFailure(this.connection,
+                this.connection.getServerInfo(), ReconnectReason.SERVER_KICK, message), this.connection);
+        if (signal == PacketSignal.UNHANDLED) {
+            // PLAYER_SPAWN may arrive before phase 2 completes: route it to the transfer callback.
+            return super.handle(packet);
+        }
+        return signal;
     }
 
     @Override
@@ -209,20 +219,48 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
             return Signals.CANCEL;
         }
 
-        if (rewriteData.getTransferCallback() != null && rewriteData.getTransferCallback().getPhase() != TransferCallback.TransferPhase.RESET) {
+        // A newer connect() request discards this connection asynchronously, but its START_GAME
+        // may already be in flight, drop it before it hijacks the player.
+        if (this.player.getPendingConnection() != this.connection) {
+            this.connection.disconnect();
+            log.warn("[{}] Aborted server transfer to {} because the connection was discarded!",
+                    this.player.getName(), this.connection.getServerInfo().getServerName());
+            return Signals.CANCEL;
+        }
+
+        // The client locks these settings on its first spawn: a server that disagrees with them can
+        // not be joined without a full reconnect, so fail the transfer while it is still recoverable.
+        StartGameSettings startGameSettings = rewriteData.getStartGameSettings();
+        String incompatibilities = startGameSettings == null ? null : startGameSettings.findIncompatibilities(packet);
+        if (incompatibilities != null) {
+            log.warn("[{}] Aborted server transfer to {} due to incompatible StartGame settings: {}",
+                    this.player.getName(), this.connection.getServerInfo().getServerName(), incompatibilities);
+            this.player.onTransferFailure(this.connection, this.connection.getServerInfo(),
+                    ReconnectReason.INCOMPATIBLE, "Incompatible server settings");
+            return Signals.CANCEL;
+        }
+
+        ClientConnection oldConnection = this.player.getDownstreamConnection();
+        TransferCallback transferCallback = new TransferCallback(this.player, this.connection, oldConnection.getServerInfo(), packet.getDimensionId());
+        // Downstream connections run on different event loops: two of them can reach START_GAME
+        // concurrently, so the transfer slot must be claimed atomically. The loser aborts here.
+        if (!rewriteData.trySetTransferCallback(transferCallback)) {
             this.connection.disconnect();
             String serverName = this.connection.getServerInfo().getServerName();
             this.player.sendMessage(new TranslationContainer("waterdog.downstream.connecting", serverName));
             log.warn("[{}] Aborted server transfer to {} because player is already being transferred!", this.player.getName(), serverName);
             return Signals.CANCEL;
         }
+        transferCallback.startTimeout();
 
-        ClientConnection oldConnection = this.player.getDownstreamConnection();
         oldConnection.getServerInfo().removeConnection(oldConnection);
+        // When disconnect is called from outside the event loop, the actual disconnection will run asynchronously.
+        // Window is usually very short but in some rare cases it might take longer than usual.
+        // By setting the handler to null, we prevent any potential leakage from the old server.
+        oldConnection.setPacketHandler(null);
         oldConnection.disconnect();
         this.player.setDownstreamConnection(this.connection);
         this.connection.getServerInfo().addConnection(this.connection);
-        this.player.setAcceptPlayStatus(true);
 
         ServerTransferEvent event = new ServerTransferEvent(this.player, oldConnection.getServerInfo(), this.connection.getServerInfo());
         this.player.getProxy().getEventManager().callEvent(event);
@@ -266,12 +304,50 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
         }
         scoreboards.clear();
 
+        Int2IntMap volumeEntities = this.player.getVolumeEntities();
+        for (Int2IntMap.Entry entry : volumeEntities.int2IntEntrySet()) {
+            injectRemoveVolumeEntity(this.player.getConnection(), entry.getIntKey(), entry.getIntValue());
+        }
+        volumeEntities.clear();
+
+        if (this.player.isFogApplied()) {
+            injectClearFog(this.player.getConnection());
+            this.player.setFogApplied(false);
+        }
+
+        if (this.player.getInputLockData() != 0) {
+            injectInputLocks(this.player.getConnection(), 0, rewriteData.getSpawnPosition());
+            this.player.setInputLockData(0);
+        }
+
+        Set<HudElement> hiddenHud = this.player.getHiddenHudElements();
+        if (!hiddenHud.isEmpty()) {
+            injectResetHud(this.player.getConnection(), hiddenHud);
+            hiddenHud.clear();
+        }
+
+        Int2ObjectMap<ContainerType> openContainers = this.player.getOpenContainers();
+        for (Int2ObjectMap.Entry<ContainerType> entry : openContainers.int2ObjectEntrySet()) {
+            injectCloseContainer(this.player.getConnection(), (byte) entry.getIntKey(), entry.getValue());
+        }
+        openContainers.clear();
+        // ContainerClosePacket can not close the player's own inventory window. If the previous server left it
+        // open the client gets stuck and refuses to open any inventory, so force it shut via the SLEEPING flag.
+        injectForceCloseInventory(this.player.getConnection(), rewriteData.getEntityId());
+
         injectRemoveAllEffects(this.player.getConnection(), rewriteData.getEntityId(), this.player.getProtocol());
         injectClearWeather(this.player.getConnection());
 
-        injectGameMode(this.player.getConnection(), packet.getPlayerGameType());
+        // BDS sends DEFAULT when the player's mode equals the world default and relies on levelGameType.
+        // Mid-transfer the client might resolve the default differently. That is why we resolve it ourselves.
+        GameType gameType = packet.getPlayerGameType();
+        if (gameType == GameType.DEFAULT) {
+            gameType = packet.getLevelGameType();
+        }
+        injectGameMode(this.player.getConnection(), gameType);
         injectSetDifficulty(this.player.getConnection(), packet.getDifficulty());
         injectGameRules(this.player.getConnection(), packet.getGamerules());
+        injectTime(this.player.getConnection(), packet.getDayCycleStopTime());
 
         this.connection.sendPacket(this.player.getLoginData().getChunkRadius());
 
@@ -286,9 +362,7 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
             newDimension = packet.getDimensionId();
         }
 
-        TransferCallback transferCallback = new TransferCallback(this.player, this.connection, oldConnection.getServerInfo(), packet.getDimensionId());
         rewriteData.setDimension(newDimension);
-        rewriteData.setTransferCallback(transferCallback);
 
         boolean fastTransfer = event.isTransferScreenAllowed() && newDimension != packet.getDimensionId();
         if (fastTransfer) {
@@ -296,18 +370,12 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
             injectPosition(this.player.getConnection(), fakePosition, packet.getRotation(), rewriteData.getEntityId());
             this.player.getConnection().setTransferQueueActive(true);
             injectDimensionChange(this.player.getConnection(), newDimension, fakePosition,
-                    rewriteData.getEntityId(), player.getProtocol(), true);
-            // Force client to exit first dim screen after one second
-            this.player.getProxy().getScheduler().scheduleDelayed(() -> {
-                PlayStatusPacket statusPacket = new PlayStatusPacket();
-                statusPacket.setStatus(PlayStatusPacket.Status.PLAYER_SPAWN);
-                this.player.getConnection().sendPacketImmediately(statusPacket);
-            }, 40);
+                    rewriteData.getEntityId(), player.getProtocol(), true, this.player.isSubChunkRequestMode());
         } else if (newDimension == packet.getDimensionId()) {
             // Transfer between different dimensions
             injectPosition(this.player.getConnection(), packet.getPlayerPosition(), packet.getRotation(), rewriteData.getEntityId());
             injectDimensionChange(this.player.getConnection(), newDimension, packet.getPlayerPosition(),
-                    rewriteData.getEntityId(), player.getProtocol(), false);
+                    rewriteData.getEntityId(), player.getProtocol(), false, this.player.isSubChunkRequestMode());
             transferCallback.onDimChangeSuccess(); // Simulate two dim-change behaviour
         } else {
             injectPosition(this.player.getConnection(), packet.getPlayerPosition(), packet.getRotation(), rewriteData.getEntityId());
@@ -322,16 +390,7 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
     public PacketSignal handle(DisconnectPacket packet) {
         // Target server disconnected before StartGamePacket — clear suppression so bridge server chunks flow again
         this.player.getRewriteData().setSuppressChunkTransfer(false);
-
-        TransferCallback transferCallback = this.player.getRewriteData().getTransferCallback();
-        if (transferCallback != null) {
-            // Player was already disconnected from old downstream
-            transferCallback.onTransferFailed();
-            return Signals.CANCEL;
-        }
-
-        this.connection.disconnect();
-        this.player.sendMessage(new TranslationContainer("waterdog.downstream.transfer.failed", this.connection.getServerInfo().getServerName(), packet.getKickMessage()));
+        this.player.onDownstreamFailure(this.connection, ReconnectReason.SERVER_KICK, packet.getKickMessage());
         return Signals.CANCEL;
     }
 }

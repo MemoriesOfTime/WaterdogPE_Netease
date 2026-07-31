@@ -17,6 +17,7 @@ package dev.waterdog.waterdogpe.network.protocol.handler.upstream;
 
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.WaterdogPE;
+import dev.waterdog.waterdogpe.event.defaults.IncompatibleProtocolEvent;
 import dev.waterdog.waterdogpe.event.defaults.PlayerAuthenticatedEvent;
 import dev.waterdog.waterdogpe.event.defaults.PlayerPreAuthEvent;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.CompressionType;
@@ -32,9 +33,12 @@ import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
 import org.cloudburstmc.protocol.bedrock.codec.compat.BedrockCompat;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.common.PacketSignal;
+import io.netty.channel.Channel;
+import io.netty.util.concurrent.ScheduledFuture;
 
 import java.net.InetSocketAddress;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 /**
  * The Pipeline Handler handling the login handshake part of the initial connect. Will be replaced after success.
@@ -47,6 +51,10 @@ public class LoginUpstreamHandler implements BedrockPacketHandler {
 
     // Whether login was allowed
     private boolean loginInitialized;
+    // Whether the login handshake completed successfully; guards the login-timeout task
+    private boolean loginCompleted;
+    // Kicks the connection if the login handshake is not completed in time
+    private ScheduledFuture<?> loginTimeoutFuture;
     // The compression used by this session
     // Defaults to ZLIB for older versions
     private CompressionType compression;
@@ -56,6 +64,36 @@ public class LoginUpstreamHandler implements BedrockPacketHandler {
     public LoginUpstreamHandler(ProxyServer proxy, BedrockServerSession session) {
         this.proxy = proxy;
         this.session = session;
+        this.scheduleLoginTimeout();
+    }
+
+    private void scheduleLoginTimeout() {
+        int timeout = this.proxy.getNetworkSettings().loginTimeout();
+        if (timeout <= 0) {
+            return;
+        }
+
+        Channel channel = this.session.getPeer().getChannel();
+        this.loginTimeoutFuture = channel.eventLoop().schedule(() -> {
+            if (this.loginCompleted || !this.session.isConnected()) {
+                return;
+            }
+            this.proxy.getLogger().warning("[{}] <-> Disconnecting: login handshake not completed within {}s", this.session.getSocketAddress(), timeout);
+            this.session.disconnect("Login timeout");
+            // Treat a stalled handshake like any other protocol violation so the source IP is throttled/blocked
+            this.proxy.getSecurityManager().onConnectionError(this.session.getSocketAddress(), null);
+        }, timeout, TimeUnit.SECONDS);
+
+        // Cancel the task if the connection closes for any other reason before it fires
+        channel.closeFuture().addListener(future -> this.cancelLoginTimeout());
+    }
+
+    private void cancelLoginTimeout() {
+        ScheduledFuture<?> future = this.loginTimeoutFuture;
+        if (future != null) {
+            future.cancel(false);
+            this.loginTimeoutFuture = null;
+        }
     }
 
     private void onLoginFailed(HandshakeEntry handshakeEntry, Throwable throwable, String disconnectReason) {
@@ -85,13 +123,17 @@ public class LoginUpstreamHandler implements BedrockPacketHandler {
         if (protocol != null) {
             return protocol;
         }
-
+        IncompatibleProtocolEvent event = new IncompatibleProtocolEvent(player, protocolVersion,
+                (protocolVersion > WaterdogPE.version().latestProtocolVersion() ?
+                        PlayStatusPacket.Status.LOGIN_FAILED_SERVER_OLD :
+                        PlayStatusPacket.Status.LOGIN_FAILED_CLIENT_OLD),
+                "disconnect.disconnected"
+        );
+        this.proxy.getEventManager().callEvent(event);
         PlayStatusPacket status = new PlayStatusPacket();
-        status.setStatus((protocolVersion > WaterdogPE.version().latestProtocolVersion() ?
-                PlayStatusPacket.Status.LOGIN_FAILED_SERVER_OLD :
-                PlayStatusPacket.Status.LOGIN_FAILED_CLIENT_OLD));
+        status.setStatus(event.getStatus());
         this.session.sendPacketImmediately(status);
-        this.session.disconnect();
+        this.session.disconnect(event.getDisconnectMessage());
         this.proxy.getLogger().warning("[{}] <-> Upstream has disconnected due to incompatible protocol (protocol={})", this.session.getSocketAddress(), protocolVersion);
         return null;
     }
@@ -243,6 +285,16 @@ public class LoginUpstreamHandler implements BedrockPacketHandler {
     }
 
     private void finishConnection() {
+        if (this.player == null) {
+            this.proxy.getLogger().warning("[{}] <-> Upstream has not sent LoginPacket", this.session.getSocketAddress());
+            this.session.disconnect("Wrong login flow");
+            this.proxy.getSecurityManager().onConnectionError(this.session.getSocketAddress(), null);
+            return;
+        }
+
+        this.loginCompleted = true;
+        this.cancelLoginTimeout();
+
         PlayStatusPacket status = new PlayStatusPacket();
         status.setStatus(PlayStatusPacket.Status.LOGIN_SUCCESS);
         this.session.sendPacket(status);

@@ -16,15 +16,18 @@
 package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 
 import dev.waterdog.waterdogpe.command.Command;
+import dev.waterdog.waterdogpe.event.defaults.FastTransferRequestEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.handler.ProxyPacketHandler;
+import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
 import dev.waterdog.waterdogpe.network.protocol.registry.DefinitionAggregator;
 import dev.waterdog.waterdogpe.network.protocol.registry.FakeDefinitionRegistry;
 import dev.waterdog.waterdogpe.network.protocol.registry.ServerIdMapping;
 import dev.waterdog.waterdogpe.network.protocol.registry.TranslatingItemRegistry;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.RewriteMaps;
+import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
@@ -61,6 +64,18 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
     public AbstractDownstreamHandler(ProxiedPlayer player, ClientConnection connection) {
         this.player = player;
         this.connection = connection;
+    }
+
+    @Override
+    public PacketSignal handle(PlayStatusPacket packet) {
+        if (packet.getStatus() != PlayStatusPacket.Status.PLAYER_SPAWN) {
+            return PacketSignal.UNHANDLED;
+        }
+        TransferCallback transferCallback = player.getRewriteData().getTransferCallback();
+        if (transferCallback != null && transferCallback.getConnection() == this.connection) {
+            transferCallback.onPlayStatus();
+        }
+        return PacketSignal.UNHANDLED;
     }
 
     @Override
@@ -101,8 +116,73 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         return aggregator != null ? PacketSignal.HANDLED : PacketSignal.UNHANDLED;
     }
 
+    /**
+     * Intercepting a downstream-initiated transfer must not depend on which handler happens to be
+     * installed. {@link SwitchDownstreamHandler} claims the new connection as the player's active
+     * downstream while handling StartGame, but {@link ConnectedDownstreamHandler} is only installed
+     * once {@link TransferCallback} finishes phase 2. A TransferPacket arriving in between used to
+     * be forwarded verbatim, which hands the player to another server behind the proxy's back and
+     * detaches them from the proxy for good.
+     * <p>
+     * Every path that forwards the packet instead of acting on it is logged: losing a player this
+     * way is otherwise completely invisible.
+     */
+    @Override
+    public PacketSignal handle(TransferPacket packet) {
+        if (this.connection != this.player.getDownstreamConnection()
+                && this.connection != this.player.getPendingConnection()) {
+            // A discarded downstream must never be able to redirect the player.
+            this.player.getLogger().debug("[{}] Ignored TransferPacket from a stale connection to {}",
+                    this.player.getName(), this.connection.getServerInfo().getServerName());
+            return Signals.CANCEL;
+        }
+
+        if (!this.player.getProxy().getConfiguration().useFastTransfer()) {
+            this.player.getLogger().debug("[{}] Passing TransferPacket to {}:{} through: fast transfer is disabled",
+                    this.player.getName(), packet.getAddress(), packet.getPort());
+            return PacketSignal.UNHANDLED;
+        }
+
+        ServerInfo serverInfo = this.player.getProxy().getServerInfo(packet.getAddress());
+        if (serverInfo == null) {
+            serverInfo = this.player.getProxy().getServerInfo(packet.getAddress(), packet.getPort());
+        }
+
+        FastTransferRequestEvent event = new FastTransferRequestEvent(serverInfo, this.player, packet.getAddress(), packet.getPort());
+        this.player.getProxy().getEventManager().callEvent(event);
+
+        if (event.isCancelled()) {
+            this.player.getLogger().debug("[{}] Passing TransferPacket to {}:{} through: FastTransferRequestEvent was cancelled",
+                    this.player.getName(), packet.getAddress(), packet.getPort());
+            return PacketSignal.UNHANDLED;
+        }
+
+        if (event.getServerInfo() == null) {
+            this.player.getLogger().warning("[{}] Passing TransferPacket to {}:{} through: no downstream server matches this address, the player will leave the proxy",
+                    this.player.getName(), packet.getAddress(), packet.getPort());
+            return PacketSignal.UNHANDLED;
+        }
+
+        TransferCallback activeTransfer = this.player.getRewriteData().getTransferCallback();
+        if (activeTransfer != null && activeTransfer.getPhase() != TransferCallback.TransferPhase.RESET) {
+            // connect() denies overlapping transfers, so this request is about to be dropped. Say so:
+            // this is the point where a downstream-initiated redirect silently disappears.
+            this.player.getLogger().info("[{}] TransferPacket to {} arrived while the transfer to {} is still in progress, dropping the request",
+                    this.player.getName(), event.getServerInfo().getServerName(), activeTransfer.getTargetServer().getServerName());
+        }
+
+        this.player.connect(event.getServerInfo());
+        return Signals.CANCEL;
+    }
+
     @Override
     public void sendProxiedBatch(BedrockBatchWrapper batch) {
+        ClientConnection current = this.player.getDownstreamConnection();
+        if (current != null && this.connection != current) {
+            // Noop. Drop batches from a downstream that is no longer the player's active one.
+            // Null check is for the initial connection.
+            return;
+        }
         if (this.player.getConnection().isConnected()) {
             this.player.getConnection().sendPacket(batch.retain());
         }
@@ -318,6 +398,8 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
     public ClientConnection getConnection() {
         return connection;
     }
+
+    protected static final String BLOCKING_ID = "minecraft:shield";
 
     protected void setItemDefinitions(Collection<ItemDefinition> definitions) {
         SimpleDefinitionRegistry.Builder<ItemDefinition> itemRegistry = SimpleDefinitionRegistry.builder();

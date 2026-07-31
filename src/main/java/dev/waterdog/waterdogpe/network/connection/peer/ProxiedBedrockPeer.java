@@ -15,6 +15,7 @@
 
 package dev.waterdog.waterdogpe.network.connection.peer;
 
+import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.network.connection.codec.batch.FrameIdCodec;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.CompressionType;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.ProxiedCompressionCodec;
@@ -28,7 +29,6 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.log4j.Log4j2;
 import org.cloudburstmc.netty.channel.raknet.RakChannel;
-import org.cloudburstmc.netty.channel.raknet.config.RakChannelOption;
 import org.cloudburstmc.netty.handler.codec.raknet.common.RakSessionCodec;
 import org.cloudburstmc.protocol.bedrock.BedrockPeer;
 import org.cloudburstmc.protocol.bedrock.BedrockSession;
@@ -61,28 +61,29 @@ public class ProxiedBedrockPeer extends BedrockPeer {
     @Setter
     private boolean netEaseClient = false;
 
-    public ProxiedBedrockPeer(Channel channel, BedrockSessionFactory factory) {
+    private final ProxyServer proxy;
+
+    public ProxiedBedrockPeer(Channel channel, BedrockSessionFactory factory, ProxyServer proxy) {
         super(channel, factory);
+        this.proxy = proxy;
     }
 
     private void onBedrockBatch(BedrockBatchWrapper batch) {
-        try {
-            if (this.firstSession == null) {
-                for (BedrockPacketWrapper wrapper : batch.getPackets()) {
-                    try {
-                        BedrockServerSession session = this.getSession(wrapper.getTargetSubClientId());
-                        session.onPacket(wrapper);
-                    } catch (Exception e) {
-                        log.error("[{}] Exception dispatching packet to subClientId {}",
-                            getSocketAddress(), wrapper.getTargetSubClientId(), e);
-                    }
+        if (this.closing.get()) {
+            return;
+        }
+        if (this.firstSession == null) {
+            for (BedrockPacketWrapper wrapper : batch.getPackets()) {
+                try {
+                    BedrockServerSession session = this.getSession(wrapper.getTargetSubClientId());
+                    session.onPacket(wrapper);
+                } catch (Exception e) {
+                    log.error("[{}] Exception dispatching packet to subClientId {}",
+                        getSocketAddress(), wrapper.getTargetSubClientId(), e);
                 }
-            } else {
-                this.firstSession.onBedrockBatch(batch);
             }
-        } catch (Exception e) {
-            log.error("[{}] Exception processing BedrockBatch", getSocketAddress(), e);
-            throw e;
+        } else {
+            this.firstSession.onBedrockBatch(batch);
         }
     }
 
@@ -112,16 +113,17 @@ public class ProxiedBedrockPeer extends BedrockPeer {
     }
 
     @Override
-    protected void onTick() {
-        if (!this.closed.get() && !this.packetQueue.isEmpty()) {
-            BedrockBatchWrapper batch = BedrockBatchWrapper.newInstance();
-
-            BedrockPacketWrapper packet;
-            while ((packet = this.packetQueue.poll()) != null) {
-                batch.getPackets().add(packet);
-            }
-            this.channel.writeAndFlush(batch);
+    protected void flushQueue() {
+        if (this.packetQueue.isEmpty()) {
+            return;
         }
+        BedrockBatchWrapper batch = BedrockBatchWrapper.newInstance();
+
+        BedrockPacketWrapper packet;
+        while ((packet = this.packetQueue.poll()) != null) {
+            batch.getPackets().add(packet);
+        }
+        this.channel.writeAndFlush(batch);
     }
 
     public void sendPacket(BedrockBatchWrapper wrapper) {
@@ -133,6 +135,10 @@ public class ProxiedBedrockPeer extends BedrockPeer {
     }
 
     private void sendPacket0(BedrockBatchWrapper wrapper) {
+        if (this.closing.get()) { // closed is covered by netty: writes to a closed channel are failed and released
+            wrapper.release();
+            return;
+        }
         if (!(wrapper.getAlgorithm() instanceof PacketCompressionAlgorithm)) {
             wrapper.setCompressed(null); // Do not allow using unsupported algorithms when sending to client
         } else if (this.version.isBefore(ProtocolVersion.MINECRAFT_PE_1_20_60) && (this.compressionStrategy == null || 
@@ -223,15 +229,6 @@ public class ProxiedBedrockPeer extends BedrockPeer {
         this.compressionStrategy = strategy;
     }
 
-    public void disconnect(String reason) {
-        this.sessions.values().forEach(session -> session.disconnect(reason));
-        this.channel.eventLoop().schedule(() -> this.channel.close(), 200, TimeUnit.MILLISECONDS);
-    }
-
-    public int getRakVersion() {
-        return this.channel.config().getOption(RakChannelOption.RAK_PROTOCOL_VERSION);
-    }
-
     public boolean isSplitScreen() {
         return this.sessions.size() > 1;
     }
@@ -252,8 +249,7 @@ public class ProxiedBedrockPeer extends BedrockPeer {
                 super.channelRead(ctx, ReferenceCountUtil.retain(msg));
             }
         } catch (Exception e) {
-            log.error("{} Exception caught in bedrock connection", ctx.channel().remoteAddress(), e);
-            this.disconnect("Internal error");
+            exceptionCaught(ctx, e);
         } finally {
             ReferenceCountUtil.release(msg);
         }
@@ -261,7 +257,20 @@ public class ProxiedBedrockPeer extends BedrockPeer {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        log.error("{} Exception caught in bedrock connection", ctx.channel().remoteAddress(), cause);
-        this.disconnect("Internal error");
+        this.close0("Internal error", true);
+        this.proxy.getSecurityManager().onConnectionError(ctx.channel().remoteAddress(), cause);
+    }
+
+    public void blackholeAndCloseLater(CharSequence reason) {
+        if (!this.closing.compareAndSet(false, true)) {
+            return;
+        }
+        this.blackholeInboundPackets();
+        for (BedrockSession session : this.sessions.values()) {
+            session.setDisconnectReason(reason);
+        }
+        this.channel.eventLoop().schedule(() -> {
+            this.channel.disconnect();
+        }, 200, TimeUnit.MILLISECONDS);
     }
 }

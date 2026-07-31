@@ -119,6 +119,18 @@ public class ProtocolCodecs {
         HANDLED_PACKETS.add(PlayerUpdateEntityOverridesPacket.class);
         HANDLED_PACKETS.add(PlayerLocationPacket.class);
         HANDLED_PACKETS.add(CameraPresetsPacket.class);
+        HANDLED_PACKETS.add(AddVolumeEntityPacket.class);
+        HANDLED_PACKETS.add(RemoveVolumeEntityPacket.class);
+        HANDLED_PACKETS.add(PlayerFogPacket.class);
+        HANDLED_PACKETS.add(UpdateClientInputLocksPacket.class);
+        HANDLED_PACKETS.add(SetHudPacket.class);
+        HANDLED_PACKETS.add(ContainerOpenPacket.class);
+        HANDLED_PACKETS.add(ContainerClosePacket.class);
+        HANDLED_PACKETS.add(SetTimePacket.class);
+        HANDLED_PACKETS.add(SubChunkRequestPacket.class);
+        HANDLED_PACKETS.add(SubChunkPacket.class);
+        HANDLED_PACKETS.add(ChunkRadiusUpdatedPacket.class);
+        HANDLED_PACKETS.add(DebugDrawerPacket.class);
         // Inventory/crafting packets required for custom item registry aggregation
         HANDLED_PACKETS.add(InventoryContentPacket.class);
         HANDLED_PACKETS.add(InventorySlotPacket.class);

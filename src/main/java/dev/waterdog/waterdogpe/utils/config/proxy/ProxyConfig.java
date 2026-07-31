@@ -120,11 +120,6 @@ public class ProxyConfig extends YamlConfig {
     @Comment("If enabled, the proxy will pass information like XUID or IP to the downstream server using custom fields in the LoginPacket")
     private boolean useLoginExtras = false;
 
-    @Path("use_certificate_payload")
-    @Accessors(fluent = true)
-    @Comment("If enabled, the proxy will always send Certificate payload in the LoginPacket")
-    private boolean useCertificatePayload = true;
-
     @Path("replace_username_spaces")
     @Comment("Replaces username spaces with underscores if enabled")
     private boolean replaceUsernameSpaces = false;
@@ -180,6 +175,26 @@ public class ProxyConfig extends YamlConfig {
     @Path("pack_cache_size")
     @Comment("You can set maximum pack size in MB to be cached.")
     private int packCacheSize = 16;
+
+    @Path("pack_cdn_urls")
+    @Comments({
+            "Resource packs which should be delivered to clients using a CDN URL instead of the in-protocol chunked transfer.",
+            "Each URL must point directly to the pack zip file and be publicly reachable over HTTPS.",
+            "Packs are downloaded once at startup to determine their manifest, size and hash, and remain available",
+            "via the chunked transfer as fallback for clients which can not download from the CDN."
+    })
+    private List<String> packCdnUrls = new ArrayList<>();
+
+    @Path("disable_cdn_for")
+    @Comments({
+            "Device platforms listed here never receive CDN URLs and instead get packs through the chunked transfer.",
+            "Example: [ANDROID, IOS]"
+    })
+    private List<String> disableCdnPlatforms = new ArrayList<>();
+
+    @Path("force_disable_vibrant_visuals")
+    @Comment("If enabled, clients which support Vibrant Visuals (deferred lighting) will be forced to turn it off.")
+    private boolean forceDisableVibrantVisuals = false;
 
     @Path("default_idle_threads")
     @Comment("Creating threads may be in some situations expensive. Specify minimum count of idle threads per internal thread executors. Set to -1 to auto-detect by core count.")

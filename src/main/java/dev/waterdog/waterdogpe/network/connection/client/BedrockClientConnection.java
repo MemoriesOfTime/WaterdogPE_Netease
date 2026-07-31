@@ -71,7 +71,7 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
     private final List<Runnable> disconnectListeners = new ObjectArrayList<>();
     private final Queue<BedrockPacketWrapper> packetQueue = PlatformDependent.newMpscQueue();
 
-    private BedrockPacketHandler packetHandler;
+    private volatile BedrockPacketHandler packetHandler;
     private CompressionStrategy compressionStrategy;
     private ScheduledFuture<?> tickFuture;
     private volatile boolean closed;
@@ -286,7 +286,7 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
                 if (this.getPacketHandler() instanceof ProxyBatchBridge bridge) {
                     bridge.setHandler(packetHandler);
                 } else {
-                    this.packetHandler = new ProxyBatchBridge(this.getCodec(), this.getCodecHelper(), packetHandler);
+                    this.packetHandler = new ProxyBatchBridge(this.getCodec(), this.getCodecHelper(), packetHandler, this.getPacketDirection());
                 }
             } else {
                 this.packetHandler = handler;

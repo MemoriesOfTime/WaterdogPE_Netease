@@ -15,16 +15,19 @@
 
 package dev.waterdog.waterdogpe.player;
 
+import dev.mot.protocol.extension.packet.NetEaseTextPacket;
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.command.CommandSender;
 import dev.waterdog.waterdogpe.event.defaults.*;
 import dev.waterdog.waterdogpe.logger.MainLogger;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.CompressionType;
+import dev.waterdog.waterdogpe.network.connection.handler.IReconnectHandler;
 import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
 import dev.waterdog.waterdogpe.network.connection.peer.BedrockServerSession;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.network.protocol.handler.PluginPacketHandler;
+import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
 import dev.waterdog.waterdogpe.network.protocol.handler.downstream.CompressionInitHandler;
 import dev.waterdog.waterdogpe.network.protocol.handler.downstream.InitialHandler;
 import dev.waterdog.waterdogpe.network.protocol.handler.downstream.SwitchDownstreamHandler;
@@ -39,21 +42,24 @@ import dev.waterdog.waterdogpe.packs.NetEasePackFilter;
 import dev.waterdog.waterdogpe.utils.types.Permission;
 import dev.waterdog.waterdogpe.utils.types.TextContainer;
 import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
+import io.netty.util.concurrent.Future;
+import it.unimi.dsi.fastutil.ints.*;
 import it.unimi.dsi.fastutil.longs.*;
 import it.unimi.dsi.fastutil.objects.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.cloudburstmc.protocol.bedrock.data.HudElement;
 import org.cloudburstmc.protocol.bedrock.data.ScoreInfo;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandOriginData;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandOriginType;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerType;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.common.util.Preconditions;
 
 import java.net.InetSocketAddress;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -72,6 +78,30 @@ public class ProxiedPlayer implements CommandSender {
     private final AtomicBoolean loginCalled = new AtomicBoolean(false);
     private final AtomicBoolean loginCompleted = new AtomicBoolean(false);
     private volatile CharSequence disconnectReason;
+
+    /**
+     * Hard cap on how long the async {@link PlayerLoginEvent} future may take to complete.
+     * If a plugin handler registers a CompletableFuture that never completes (e.g. a hung
+     * Redis/coroutine call), the player would otherwise be stranded forever: loginCompleted
+     * never flips, so {@link #disconnect(CharSequence)} can never evict it. The timeout
+     * guarantees the future always settles, which always releases the player.
+     */
+    private static final long LOGIN_EVENT_TIMEOUT_SECONDS = 60;
+
+    /**
+     * Hard cap on how long the async {@link ServerPreConnectEvent} future may take before we dial the
+     * target anyway. Mirrors {@link #LOGIN_EVENT_TIMEOUT_SECONDS}: a hung handler future must never leave
+     * the player without a connection or {@code targetServer} stuck in {@link #pendingServers} forever.
+     */
+    private static final long PRE_CONNECT_EVENT_TIMEOUT_SECONDS = 60;
+
+    /**
+     * Hard cap on how long an established downstream connection may take until StartGamePacket
+     * claims the transfer. A downstream that keeps the connection alive without ever completing
+     * the login would otherwise leave the pending connection stuck forever. This failure is
+     * still recoverable, so it goes through {@link #onTransferFailure} instead of a kick.
+     */
+    private static final int PENDING_CONNECTION_TIMEOUT_SECONDS = 60;
 
     @Getter
     private final RewriteData rewriteData = new RewriteData();
@@ -92,6 +122,16 @@ public class ProxiedPlayer implements CommandSender {
     private final Long2LongMap entityLinks = Long2LongMaps.synchronize(new Long2LongOpenHashMap());
     @Getter
     private final LongSet chunkBlobs = LongSets.synchronize(new LongOpenHashSet());
+    @Getter
+    private final Int2IntMap volumeEntities = Int2IntMaps.synchronize(new Int2IntOpenHashMap()); // id -> dimension
+    @Getter
+    private final Set<HudElement> hiddenHudElements = ObjectSets.synchronize(new ObjectOpenHashSet<>());
+    @Getter @Setter
+    private volatile boolean fogApplied;
+    @Getter @Setter
+    private volatile int inputLockData;
+    @Getter
+    private final Int2ObjectMap<ContainerType> openContainers = Int2ObjectMaps.synchronize(new Int2ObjectOpenHashMap<>()); // id -> type
     private final Object2ObjectMap<String, Permission> permissions = new Object2ObjectOpenHashMap<>();
     private final Collection<ServerInfo> pendingServers = ObjectCollections.synchronize(new ObjectArrayList<>());
     private ClientConnection clientConnection;
@@ -113,14 +153,6 @@ public class ProxiedPlayer implements CommandSender {
     private volatile boolean canRewrite = false;
     private volatile boolean hasUpstreamBridge = false;
     /**
-     * Some downstream server software requires strict packet sending policy (like PMMP4).
-     * To pass packet handler dedicated to SetLocalPlayerAsInitializedPacket only, proxy has to post-complete server transfer.
-     * Using this bool allows telling us if we except post-complete phase operation.
-     * See ConnectedDownstreamHandler and SwitchDownstreamHandler for exact usage.
-     */
-    @Setter
-    private volatile boolean acceptPlayStatus = false;
-    /**
      * Used to determine if proxy can send resource packs packets to player.
      * This value is changed by PlayerResourcePackInfoSendEvent.
      */
@@ -131,6 +163,14 @@ public class ProxiedPlayer implements CommandSender {
      */
     @Setter
     private volatile boolean acceptItemComponentPacket = true;
+    /**
+     * Whether the current downstream server serves chunks using the sub-chunk request system
+     * (LevelChunkPacket with a negative sub-chunk count). When set, injected empty chunks must use
+     * request mode too, otherwise the client breaks instead of requesting the sub-chunks.
+     */
+    @Getter
+    @Setter
+    private volatile boolean subChunkRequestMode = false;
     /**
      * Additional downstream and upstream handlers can be set by plugin.
      * Do not set directly BedrockPacketHandler to sessions!
@@ -158,11 +198,19 @@ public class ProxiedPlayer implements CommandSender {
         }
 
         PlayerLoginEvent event = new PlayerLoginEvent(this);
-        this.proxy.getEventManager().callEvent(event).whenComplete((futureEvent, error) -> {
+        this.proxy.getEventManager().callEvent(event)
+                // Never let a misbehaving (hung) async login handler strand the player forever.
+                .orTimeout(LOGIN_EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .whenComplete((futureEvent, error) -> {
             this.loginCompleted.set(true);
 
             if (error != null) {
-                this.getLogger().throwing(error);
+                if (error instanceof TimeoutException) {
+                    this.getLogger().warning("[{}|{}] PlayerLoginEvent did not complete within {}s, forcing disconnect",
+                            this.getAddress(), this.getName(), LOGIN_EVENT_TIMEOUT_SECONDS);
+                } else {
+                    this.getLogger().throwing(error);
+                }
                 this.disconnect(new TranslationContainer("waterdog.downstream.initial.connect"));
                 return;
             }
@@ -186,7 +234,7 @@ public class ProxiedPlayer implements CommandSender {
     }
 
     private void sendResourcePacks() {
-        ResourcePacksInfoPacket packet = this.proxy.getPackManager().buildPacksInfoPacket(this.getProtocol());
+        ResourcePacksInfoPacket packet = this.proxy.getPackManager().buildPacksInfoPacket(this.getProtocol(), this.getDevicePlatform());
         PlayerResourcePackInfoSendEvent event = new PlayerResourcePackInfoSendEvent(this, packet);
         this.proxy.getEventManager().callEvent(event);
         if (event.isCancelled()) {
@@ -255,6 +303,16 @@ public class ProxiedPlayer implements CommandSender {
             return;
         }
 
+        // Deny new transfers while another one is mid-flight: starting a second transfer before the
+        // dimension change sequence completes corrupts the client state and the transfer queue.
+        TransferCallback activeTransfer = this.rewriteData.getTransferCallback();
+        if (activeTransfer != null && activeTransfer.getPhase() != TransferCallback.TransferPhase.RESET) {
+            this.sendMessage(new TranslationContainer("waterdog.downstream.connecting", activeTransfer.getTargetServer().getServerName()));
+            this.getLogger().debug("[{}] Denied transfer to {}: transfer to {} is still in progress",
+                    this.getName(), targetServer.getServerName(), activeTransfer.getTargetServer().getServerName());
+            return;
+        }
+
         this.pendingServers.add(targetServer);
 
         ClientConnection connectingServer = this.getPendingConnection();
@@ -264,13 +322,64 @@ public class ProxiedPlayer implements CommandSender {
                 this.sendMessage(new TranslationContainer("waterdog.downstream.connecting", targetServer.getServerName()));
                 return;
             } else {
+                // Clear the pending slot first so the close event reads as a deliberate discard,
+                // not as a recoverable transfer failure.
+                this.setPendingConnection(null);
                 connectingServer.disconnect();
                 this.getLogger().debug("Discarding pending connection for " + this.getName() + "! Tried to join " + targetServer.getServerName());
             }
-            this.setPendingConnection(null);
         }
 
-        targetServer.createConnection(this).addListener(future -> {
+        // Give plugins a chance to hold out the connection (e.g. to save the player's inventory or other
+        // state on the current server) before we dial the target. The event is async and completable:
+        // any future a handler registers delays createConnection until it settles.
+        ServerPreConnectEvent preConnectEvent = new ServerPreConnectEvent(this, this.getServerInfo(), targetServer);
+        this.proxy.getEventManager().callEvent(preConnectEvent)
+                // Never let a hung handler future leave the player without a connection or targetServer pending forever.
+                .orTimeout(PRE_CONNECT_EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .whenComplete((ev, error) -> {
+                    if (error != null) {
+                        // A hung or failing hold-out leaves the player's state ambiguous (e.g. a half-saved
+                        // inventory), so abort the transfer and disconnect rather than dial the target anyway.
+                        if (error instanceof TimeoutException) {
+                            this.getLogger().warning("[{}|{}] ServerPreConnectEvent did not complete within {}s, disconnecting",
+                                    this.getAddress(), this.getName(), PRE_CONNECT_EVENT_TIMEOUT_SECONDS);
+                        } else {
+                            this.getLogger().throwing(error);
+                        }
+                        this.pendingServers.remove(targetServer);
+                        this.disconnect(new TranslationContainer("waterdog.downstream.transfer.failed",
+                                targetServer.getServerName(),
+                                error instanceof TimeoutException ? "timed out" : error.getClass().getSimpleName()));
+                        return;
+                    }
+                    if (ev.isCancelled()) {
+                        this.pendingServers.remove(targetServer);
+                        return;
+                    }
+
+                    if (!this.isConnected()) { // player might have disconnected while the event was processed
+                        this.pendingServers.remove(targetServer);
+                        return;
+                    }
+
+                    this.createConnection(targetServer);
+                });
+    }
+
+    private void createConnection(ServerInfo targetServer) {
+        Future<ClientConnection> connectionFuture;
+        try {
+            // A custom ServerInfo implementation may throw instead of failing the future; without
+            // this guard that would leak the pendingServers entry and block the target forever.
+            connectionFuture = Objects.requireNonNull(targetServer.createConnection(this), "createConnection returned null");
+        } catch (Throwable error) {
+            this.pendingServers.remove(targetServer);
+            this.connectFailure(null, targetServer, error);
+            return;
+        }
+
+        connectionFuture.addListener(future -> {
             ClientConnection connection = null;
             try {
                 if (future.cause() == null) {
@@ -280,7 +389,7 @@ public class ProxiedPlayer implements CommandSender {
                 }
             } catch (Throwable e) {
                 this.connectFailure(connection, targetServer, e);
-                this.setPendingConnection(null);
+                this.clearPendingConnection(connection);
             } finally {
                 this.pendingServers.remove(targetServer);
             }
@@ -303,9 +412,17 @@ public class ProxiedPlayer implements CommandSender {
         }
 
         this.setPendingConnection(connection);
+        this.proxy.getScheduler().scheduleDelayed(() -> {
+            if (this.getPendingConnection() == connection) {
+                this.getLogger().warning("[{}|{}] Downstream {} did not send StartGame within {}s",
+                        this.getAddress(), this.getName(), targetServer.getServerName(), PENDING_CONNECTION_TIMEOUT_SECONDS);
+                this.onTransferFailure(connection, targetServer, ReconnectReason.TIMEOUT, "Transfer timed out");
+            }
+        }, PENDING_CONNECTION_TIMEOUT_SECONDS * 20);
 
         var codec = this.isNetEaseClient() ? this.getProtocol().getNetEaseCodec() : this.getProtocol().getCodec();
-        connection.setCodecHelper(codec, this.connection.getPeer().getCodecHelper());
+        connection.setCodecHelper(codec,
+                ClientConnection.createCodecHelperSnapshot(codec, this.connection.getPeer().getCodecHelper()));
 
         BedrockPacketHandler handler;
         if (this.clientConnection == null) {
@@ -337,11 +454,74 @@ public class ProxiedPlayer implements CommandSender {
 
         this.getLogger().error("[{}|{}] Unable to connect to downstream {}", this.getAddress(), this.getName(), targetServer.getServerName(), error);
         String exceptionMessage = Objects.requireNonNullElse(error.getLocalizedMessage(), error.getClass().getSimpleName());
-        if (this.sendToFallback(targetServer, ReconnectReason.EXCEPTION, exceptionMessage)) {
-            this.sendMessage(new TranslationContainer("waterdog.connected.fallback", targetServer.getServerName()));
-        } else {
-            this.disconnect(new TranslationContainer("waterdog.downstream.transfer.failed", targetServer.getServerName(), exceptionMessage));
+        this.onTransferFailure(connection, targetServer, ReconnectReason.EXCEPTION, exceptionMessage);
+    }
+
+    /**
+     * Called when a connection to a new downstream server fails before StartGamePacket was received.
+     * The player is still fully connected to the previous downstream at this point, so the failure is
+     * recoverable: {@link IReconnectHandler#getTransferFailureServer} decides whether the player
+     * reconnects to another server or stays on the current one.
+     *
+     * @param connection   the failed connection, or null if it was never established
+     * @param targetServer the server that could not be reached
+     */
+    public final void onTransferFailure(ClientConnection connection, ServerInfo targetServer, ReconnectReason reason, String message) {
+        TransferCallback transferCallback = this.rewriteData.getTransferCallback();
+        if (connection != null && transferCallback != null && transferCallback.getConnection() == connection) {
+            // The connection already claimed the transfer: past the recoverable window,
+            // the mid-transfer failure paths own it now.
+            return;
         }
+
+        if (connection != null) {
+            // Only the current pending attempt can trigger recovery; discarded connections just die.
+            if (!this.clearPendingConnection(connection)) {
+                connection.disconnect();
+                return;
+            }
+            connection.disconnect();
+        }
+
+        if (this.disconnected.get()) {
+            return;
+        }
+
+        boolean recoverable = this.clientConnection != null && this.clientConnection.isConnected();
+        this.proxy.getEventManager().callEvent(new ServerTransferFailedEvent(this, targetServer, reason, message, recoverable));
+
+        if (connection == null && this.getPendingConnection() != null) {
+            // A dial failed while a newer connection attempt is already in flight: don't stomp it.
+            this.sendMessage(new TranslationContainer("waterdog.downstream.transfer.failed", targetServer.getServerName(), message));
+            return;
+        }
+
+        if (!recoverable) {
+            // No healthy downstream to stay on: regular fallback behavior.
+            if (this.sendToFallback(targetServer, reason, message)) {
+                this.sendMessage(new TranslationContainer("waterdog.connected.fallback", targetServer.getServerName()));
+            } else {
+                this.disconnect(new TranslationContainer("waterdog.downstream.transfer.failed", targetServer.getServerName(), message));
+            }
+            return;
+        }
+
+        ServerInfo reconnectServer;
+        try {
+            reconnectServer = this.proxy.getReconnectHandler().getTransferFailureServer(this, targetServer, reason, message);
+        } catch (Throwable t) {
+            // A throwing reconnect handler must not abort recovery; treat it as "stay".
+            this.getLogger().error("[" + this.getName() + "] ReconnectHandler getTransferFailureServer threw", t);
+            reconnectServer = null;
+        }
+        if (reconnectServer == null || reconnectServer == this.getServerInfo()) {
+            // Stay on the previous downstream, which is still fully functional.
+            this.sendMessage(new TranslationContainer("waterdog.downstream.transfer.failed", targetServer.getServerName(), message));
+            return;
+        }
+
+        this.getLogger().debug("[{}] Transfer to {} failed: reconnecting to {}", this.getName(), targetServer.getServerName(), reconnectServer.getServerName());
+        this.connect(reconnectServer);
     }
 
     /**
@@ -352,8 +532,8 @@ public class ProxiedPlayer implements CommandSender {
     }
 
     public void disconnect(TextContainer message) {
-        if (message instanceof TranslationContainer) {
-            this.disconnect(((TranslationContainer) message).getTranslated());
+        if (message instanceof TranslationContainer tr) {
+            this.disconnect(tr.getTranslated());
         } else {
             this.disconnect(message.getMessage());
         }
@@ -382,7 +562,7 @@ public class ProxiedPlayer implements CommandSender {
         this.proxy.getEventManager().callEvent(event);
 
         if (this.connection != null && this.connection.isConnected()) {
-            this.connection.disconnect(reason);
+            this.connection.disconnect(reason == null ? null : reason.toString());
         }
 
         if (this.clientConnection != null) {
@@ -416,7 +596,14 @@ public class ProxiedPlayer implements CommandSender {
             return false;
         }
 
-        ServerInfo fallbackServer = this.proxy.getReconnectHandler().getFallbackServer(this, oldServer, reason, message);
+        ServerInfo fallbackServer;
+        try {
+            fallbackServer = this.proxy.getReconnectHandler().getFallbackServer(this, oldServer, reason, message);
+        } catch (Throwable t) {
+            // A throwing reconnect handler must not abort failure handling; treat it as no fallback.
+            this.getLogger().error("[" + this.getName() + "] ReconnectHandler getFallbackServer threw", t);
+            return false;
+        }
         if (fallbackServer != null && fallbackServer != this.getServerInfo()) {
             this.getLogger().debug("[{}] Connecting to fallback server {} with reason {}", this.getName(), fallbackServer.getServerName(), reason.getName());
             this.connect(fallbackServer);
@@ -425,20 +612,90 @@ public class ProxiedPlayer implements CommandSender {
         return false;
     }
 
-    // TODO: I'm not super happy with this, but moving it to a netty handler would mean anyone who implements own handler,
-    //  has to copy that piece of code. PLS: find a better place for this two methods
-    public final void onDownstreamTimeout(ServerInfo serverInfo) {
-        if (!this.sendToFallback(serverInfo, ReconnectReason.TIMEOUT, "Downstream Timeout")) {
-            this.disconnect(new TranslationContainer("waterdog.downstream.down", serverInfo.getServerName(), "Timeout"));
+    /**
+     * Single entry point for every downstream failure signal: kicks, timeouts, channel exceptions
+     * and channel closes all route here and are handled based on the connection's role.
+     */
+    public final void onDownstreamFailure(ClientConnection connection, ReconnectReason reason, String message) {
+        Preconditions.checkNotNull(connection, "Connection can not be null!");
+
+        // CLAIMED: mid-transfer target failure, the old downstream is already gone, fail the transfer.
+        TransferCallback transferCallback = this.rewriteData.getTransferCallback();
+        if (transferCallback != null && transferCallback.getConnection() == connection
+                && transferCallback.getPhase() != TransferCallback.TransferPhase.RESET) {
+            transferCallback.onTransferFailed(message);
+            return;
         }
+
+        // PENDING: failed before StartGame, the previous downstream still works, recover there.
+        if (this.getPendingConnection() == connection) {
+            this.onTransferFailure(connection, connection.getServerInfo(), reason, message);
+            return;
+        }
+
+        // ACTIVE: the player's current downstream died, fail over.
+        if (connection == this.clientConnection) {
+            if (reason == ReconnectReason.EXCEPTION) {
+                // The channel may still be open after an exception, close it before failing over.
+                connection.disconnect();
+            }
+            this.onActiveDownstreamFailure(connection.getServerInfo(), reason, message);
+            return;
+        }
+
+        // STALE: a discarded attempt, nothing to recover.
+        connection.disconnect();
+    }
+
+    /**
+     * Terminal for failures of the active downstream: fall back if possible, kick otherwise.
+     * The per-reason branches preserve the messaging each failure source historically used.
+     */
+    private void onActiveDownstreamFailure(ServerInfo serverInfo, ReconnectReason reason, String message) {
+        if (reason == ReconnectReason.UNKNOWN && (this.getPendingConnection() != null
+                || !this.pendingServers.isEmpty() || this.disconnected.get())) {
+            return; // a silent close while a transfer or disconnect is already in flight, let it finish
+        }
+
+        if (this.sendToFallback(serverInfo, reason, message)) {
+            if (reason == ReconnectReason.EXCEPTION) {
+                this.sendMessage(new TranslationContainer("waterdog.downstream.down", serverInfo.getServerName(), message));
+            }
+            return;
+        }
+
+        if (reason == ReconnectReason.SERVER_KICK) {
+            this.disconnect(new TranslationContainer("waterdog.downstream.kicked", message));
+        } else if (reason == ReconnectReason.TIMEOUT) {
+            this.disconnect(new TranslationContainer("waterdog.downstream.down", serverInfo.getServerName(), "Timeout"));
+        } else if (reason == ReconnectReason.UNKNOWN) {
+            this.disconnect(new TranslationContainer("waterdog.downstream.down", serverInfo.getServerName(), "Disconnected"));
+        } else {
+            this.disconnect(new TranslationContainer("waterdog.downstream.down", serverInfo.getServerName(), message));
+        }
+    }
+
+    public final void onDownstreamTimeout(ServerInfo serverInfo) {
+        TransferCallback transferCallback = this.rewriteData.getTransferCallback();
+        if (transferCallback != null && transferCallback.getTargetServer() == serverInfo
+                && transferCallback.getPhase() != TransferCallback.TransferPhase.RESET) {
+            this.onDownstreamFailure(transferCallback.getConnection(), ReconnectReason.TIMEOUT, "Downstream Timeout");
+            return;
+        }
+
+        ClientConnection pendingConnection = this.getPendingConnection();
+        if (pendingConnection != null && pendingConnection.getServerInfo() == serverInfo) {
+            this.onDownstreamFailure(pendingConnection, ReconnectReason.TIMEOUT, "Downstream Timeout");
+            return;
+        }
+
+        this.onActiveDownstreamFailure(serverInfo, ReconnectReason.TIMEOUT, "Downstream Timeout");
     }
 
     public final void onDownstreamDisconnected(ClientConnection connection) {
         this.getLogger().info("[" + connection.getSocketAddress() + "|" + this.getName() + "] -> Downstream [" +
                 connection.getServerInfo().getServerName() + "] has disconnected");
-        if (this.getPendingConnection() == connection) {
-            this.setPendingConnection(null);
-        }
+        this.onDownstreamFailure(connection, ReconnectReason.UNKNOWN, "Downstream Disconnected");
     }
 
     /**
@@ -488,6 +745,23 @@ public class ProxiedPlayer implements CommandSender {
     }
 
     /**
+     * Creates a {@link TextPacket} appropriate for this player's client.
+     * <p>
+     * NetEase clients use a protocol variant ({@link NetEaseTextPacket}) that carries an extra
+     * trailing string field for {@code CHAT} and {@code POPUP} text types. Returning the correct
+     * runtime type here ensures the field is serialized with its proper (empty) value instead of
+     * relying on the codec's fallback, keeping the on-wire packet semantically complete.
+     *
+     * @param type the text type of the packet
+     * @return a {@code TextPacket} instance suitable for the player's client
+     */
+    private TextPacket createTextPacket(TextPacket.Type type) {
+        TextPacket packet = this.isNetEaseClient() ? new NetEaseTextPacket() : new TextPacket();
+        packet.setType(type);
+        return packet;
+    }
+
+    /**
      * Sends a message to the player, which will be displayed in the chat window
      *
      * @param message
@@ -498,8 +772,7 @@ public class ProxiedPlayer implements CommandSender {
             return; // Client wont accept empty string
         }
 
-        TextPacket packet = new TextPacket();
-        packet.setType(TextPacket.Type.RAW);
+        TextPacket packet = this.createTextPacket(TextPacket.Type.RAW);
         packet.setXuid(this.getXuid());
         packet.setMessage(message);
         this.sendPacket(packet);
@@ -529,8 +802,7 @@ public class ProxiedPlayer implements CommandSender {
             return;
         }
 
-        TextPacket packet = new TextPacket();
-        packet.setType(TextPacket.Type.CHAT);
+        TextPacket packet = this.createTextPacket(TextPacket.Type.CHAT);
         packet.setSourceName(this.getName());
         packet.setXuid(this.getXuid());
         packet.setMessage(message);
@@ -544,8 +816,7 @@ public class ProxiedPlayer implements CommandSender {
      * @param subtitle the subtitle, which will be displayed below the popup
      */
     public void sendPopup(String message, String subtitle) {
-        TextPacket packet = new TextPacket();
-        packet.setType(TextPacket.Type.POPUP);
+        TextPacket packet = this.createTextPacket(TextPacket.Type.POPUP);
         packet.setMessage(message);
         packet.setXuid(this.getXuid());
         this.sendPacket(packet);
@@ -557,8 +828,7 @@ public class ProxiedPlayer implements CommandSender {
      * @param message the tip message to send
      */
     public void sendTip(String message) {
-        TextPacket packet = new TextPacket();
-        packet.setType(TextPacket.Type.TIP);
+        TextPacket packet = this.createTextPacket(TextPacket.Type.TIP);
         packet.setMessage(message);
         packet.setXuid(this.getXuid());
         this.sendPacket(packet);
@@ -617,6 +887,18 @@ public class ProxiedPlayer implements CommandSender {
     public void clearTitle() {
         SetTitlePacket packet = new SetTitlePacket();
         packet.setType(SetTitlePacket.Type.CLEAR);
+        packet.setText("");
+        packet.setXuid(this.getXuid());
+        packet.setPlatformOnlineId("");
+        this.sendPacket(packet);
+    }
+
+    /**
+     * Clears the action bar of the player
+     */
+    public void clearActionBar() {
+        SetTitlePacket packet = new SetTitlePacket();
+        packet.setType(SetTitlePacket.Type.ACTIONBAR);
         packet.setText("");
         packet.setXuid(this.getXuid());
         packet.setPlatformOnlineId("");
@@ -799,12 +1081,25 @@ public class ProxiedPlayer implements CommandSender {
         return this.clientConnection;
     }
 
-    private synchronized ClientConnection getPendingConnection() {
+    public synchronized ClientConnection getPendingConnection() {
         return this.pendingConnection;
     }
 
     private synchronized void setPendingConnection(ClientConnection connection) {
         this.pendingConnection = connection;
+    }
+
+    /**
+     * Clears the pending slot only if it is still owned by the given connection.
+     *
+     * @return true if the given connection was the pending one.
+     */
+    private synchronized boolean clearPendingConnection(ClientConnection connection) {
+        if (this.pendingConnection != connection) {
+            return false;
+        }
+        this.pendingConnection = null;
+        return true;
     }
 
     public Collection<ServerInfo> getPendingServers() {
@@ -870,10 +1165,6 @@ public class ProxiedPlayer implements CommandSender {
 
     public Collection<UUID> getPlayers() {
         return this.players;
-    }
-
-    public boolean acceptPlayStatus() {
-        return this.acceptPlayStatus;
     }
 
     public boolean acceptResourcePacks() {

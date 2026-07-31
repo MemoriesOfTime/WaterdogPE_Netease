@@ -26,11 +26,13 @@ import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import dev.waterdog.waterdogpe.network.protocol.Signals;
-import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
 import org.cloudburstmc.protocol.common.PacketSignal;
+
+import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 
 import static dev.waterdog.waterdogpe.network.protocol.Signals.mergeSignals;
 import static dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils.injectEntityImmobile;
+import static dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils.injectInputLocks;
 
 public class ConnectedDownstreamHandler extends AbstractDownstreamHandler {
 
@@ -50,23 +52,10 @@ public class ConnectedDownstreamHandler extends AbstractDownstreamHandler {
     }
 
     @Override
-    public PacketSignal handle(PlayStatusPacket packet) {
-        if (!this.player.acceptPlayStatus() || packet.getStatus() != PlayStatusPacket.Status.PLAYER_SPAWN) {
-            return PacketSignal.UNHANDLED;
-        }
-
-        this.player.setAcceptPlayStatus(false);
-        RewriteData rewriteData = this.player.getRewriteData();
-        if (!rewriteData.hasImmobileFlag()) {
-            injectEntityImmobile(this.player.getConnection(), rewriteData.getEntityId(), false);
-        }
-
-        SetLocalPlayerAsInitializedPacket initializedPacket = new SetLocalPlayerAsInitializedPacket();
-        initializedPacket.setRuntimeEntityId(rewriteData.getEntityId());
-        this.connection.sendPacket(initializedPacket);
-
-        PostTransferCompleteEvent event = new PostTransferCompleteEvent(this.connection, this.player);
-        this.player.getProxy().getEventManager().callEvent(event);
+    public PacketSignal handle(LevelChunkPacket packet) {
+        // Remember whether this server serves chunks via the sub-chunk request system so injected
+        // empty chunks match it and the client keeps requesting sub-chunks instead of breaking.
+        this.player.setSubChunkRequestMode(packet.isRequestSubChunks());
         return PacketSignal.UNHANDLED;
     }
 
@@ -93,10 +82,8 @@ public class ConnectedDownstreamHandler extends AbstractDownstreamHandler {
 
     @Override
     public final PacketSignal handle(DisconnectPacket packet) {
-        if (this.player.sendToFallback(this.connection.getServerInfo(), ReconnectReason.SERVER_KICK, packet.getKickMessage())) {
-            return Signals.CANCEL;
-        }
-        this.player.disconnect(new TranslationContainer("waterdog.downstream.kicked", packet.getKickMessage()));
+        // This is not really a failure
+        this.player.onDownstreamFailure(this.connection, ReconnectReason.SERVER_KICK, packet.getKickMessage());
         return Signals.CANCEL;
     }
 }
