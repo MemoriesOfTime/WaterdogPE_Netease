@@ -20,17 +20,17 @@ import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import it.unimi.dsi.fastutil.longs.LongListIterator;
 import org.cloudburstmc.protocol.bedrock.data.camera.CameraAttachToEntityInstruction;
+import org.cloudburstmc.protocol.bedrock.data.debugshape.DebugShape;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataMap;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataType;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityLinkData;
-import org.cloudburstmc.protocol.bedrock.data.primitiveshape.*;
 import org.cloudburstmc.protocol.bedrock.packet.*;
+import org.cloudburstmc.protocol.common.PacketSignal;
 
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.ListIterator;
-import java.util.function.LongConsumer;
 
 import static dev.waterdog.waterdogpe.network.protocol.Signals.mergeSignals;
 
@@ -51,189 +51,180 @@ public class EntityMap implements BedrockPacketHandler {
     );
 
     private final ProxiedPlayer player;
-    private final RewriteData rewrite;
+    private final RewriteData data;
 
     public EntityMap(ProxiedPlayer player) {
         this.player = player;
-        this.rewrite = player.getRewriteData();
+        this.data = player.getRewriteData();
     }
 
     public PacketSignal doRewrite(BedrockPacket packet) {
         return this.player.canRewrite() ? packet.handle(this) : PacketSignal.UNHANDLED;
     }
 
-    private PacketSignal rewriteId(long from, LongConsumer setter) {
-        long rewriteId = PlayerRewriteUtils.rewriteId(from, this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-        if (rewriteId == from) {
-            return PacketSignal.UNHANDLED;
-        }
-        setter.accept(rewriteId);
-        return PacketSignal.HANDLED;
-    }
-
     @Override
     public PacketSignal handle(MoveEntityAbsolutePacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(EntityEventPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(MobEffectPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(UpdateAttributesPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(MobEquipmentPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(MobArmorEquipmentPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(PlayerActionPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(SetEntityDataPacket packet) {
-        PacketSignal signal = rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        PacketSignal signal = data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
         PacketSignal metaSignal = this.rewriteMetadata(packet.getMetadata());
         return mergeSignals(signal, metaSignal);
     }
 
     @Override
     public PacketSignal handle(SetEntityMotionPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(MoveEntityDeltaPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(SetLocalPlayerAsInitializedPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(AddPlayerPacket packet) {
-        PacketSignal signal0 = rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
-        PacketSignal signal1 = rewriteId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
+        PacketSignal signal0 = data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        PacketSignal signal1 = data.rewriteEntityId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
 
         PacketSignal signal2 = PacketSignal.UNHANDLED;
 
         ListIterator<EntityLinkData> iterator = packet.getEntityLinks().listIterator();
         while (iterator.hasNext()) {
             EntityLinkData entityLink = iterator.next();
-            long from = PlayerRewriteUtils.rewriteId(entityLink.from(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-            long to = PlayerRewriteUtils.rewriteId(entityLink.to(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-            if (entityLink.from() != from || entityLink.to() != to) {
-                iterator.set(new EntityLinkData(from, to, entityLink.type(), entityLink.immediate(), entityLink.riderInitiated(), entityLink.vehicleAngularVelocity()));
+            long from = PlayerRewriteUtils.rewriteId(entityLink.getFrom(), this.data.getEntityId(), this.data.getOriginalEntityId());
+            long to = PlayerRewriteUtils.rewriteId(entityLink.getTo(), this.data.getEntityId(), this.data.getOriginalEntityId());
+            if (entityLink.getFrom() != from || entityLink.getTo() != to) {
+                iterator.set(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated(), entityLink.getVehicleAngularVelocity()));
                 signal2 = PacketSignal.HANDLED;
             }
         }
 
         PacketSignal signal3 = this.rewriteMetadata(packet.getMetadata());
         return (signal0 == PacketSignal.HANDLED || signal1 == PacketSignal.HANDLED || signal2 == PacketSignal.HANDLED || signal3 == PacketSignal.HANDLED) ?
-                PacketSignal.HANDLED : PacketSignal.UNHANDLED;
+            PacketSignal.HANDLED : PacketSignal.UNHANDLED;
     }
 
     @Override
     public PacketSignal handle(AddEntityPacket packet) {
-        PacketSignal signal0 = rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
-        PacketSignal signal1 = rewriteId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
+        PacketSignal signal0 = data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        PacketSignal signal1 = data.rewriteEntityId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
 
         PacketSignal signal2 = PacketSignal.UNHANDLED;
 
         ListIterator<EntityLinkData> iterator = packet.getEntityLinks().listIterator();
         while (iterator.hasNext()) {
             EntityLinkData entityLink = iterator.next();
-            long from = PlayerRewriteUtils.rewriteId(entityLink.from(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-            long to = PlayerRewriteUtils.rewriteId(entityLink.to(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-            if (entityLink.from() != from || entityLink.to() != to) {
-                iterator.set(new EntityLinkData(from, to, entityLink.type(), entityLink.immediate(), entityLink.riderInitiated(), entityLink.vehicleAngularVelocity()));
+            long from = PlayerRewriteUtils.rewriteId(entityLink.getFrom(), this.data.getEntityId(), this.data.getOriginalEntityId());
+            long to = PlayerRewriteUtils.rewriteId(entityLink.getTo(), this.data.getEntityId(), this.data.getOriginalEntityId());
+            if (entityLink.getFrom() != from || entityLink.getTo() != to) {
+                iterator.set(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated(), entityLink.getVehicleAngularVelocity()));
                 signal2 = PacketSignal.HANDLED;
             }
         }
 
         PacketSignal signal4 = this.rewriteMetadata(packet.getMetadata());
         return (signal0 == PacketSignal.HANDLED || signal1 == PacketSignal.HANDLED || signal2 == PacketSignal.HANDLED || signal4 == PacketSignal.HANDLED) ?
-                PacketSignal.HANDLED : PacketSignal.UNHANDLED;
+            PacketSignal.HANDLED : PacketSignal.UNHANDLED;
     }
 
     @Override
     public PacketSignal handle(AddItemEntityPacket packet) {
-        PacketSignal signal0 = rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
-        PacketSignal signal1 = rewriteId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
+        PacketSignal signal0 = data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        PacketSignal signal1 = data.rewriteEntityId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
         PacketSignal signal2 = this.rewriteMetadata(packet.getMetadata());
         return (signal0 == PacketSignal.HANDLED || signal1 == PacketSignal.HANDLED || signal2 == PacketSignal.HANDLED) ?
-                PacketSignal.HANDLED : PacketSignal.UNHANDLED;
+            PacketSignal.HANDLED : PacketSignal.UNHANDLED;
     }
 
     @Override
     public PacketSignal handle(AddPaintingPacket packet) {
-        PacketSignal signal0 = rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
-        PacketSignal signal1 = rewriteId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
+        PacketSignal signal0 = data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        PacketSignal signal1 = data.rewriteEntityId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
         return mergeSignals(signal0, signal1);
     }
 
     @Override
     public PacketSignal handle(RemoveEntityPacket packet) {
-        return rewriteId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
+        return data.rewriteEntityId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
     }
 
     @Override
     public PacketSignal handle(BossEventPacket packet) {
-        PacketSignal signal0 = rewriteId(packet.getBossUniqueEntityId(), packet::setBossUniqueEntityId);
-        PacketSignal signal1 = rewriteId(packet.getPlayerUniqueEntityId(), packet::setPlayerUniqueEntityId);
+        PacketSignal signal0 = data.rewriteEntityId(packet.getBossUniqueEntityId(), packet::setBossUniqueEntityId);
+        PacketSignal signal1 = data.rewriteEntityId(packet.getPlayerUniqueEntityId(), packet::setPlayerUniqueEntityId);
         return mergeSignals(signal0, signal1);
     }
 
     @Override
     public PacketSignal handle(TakeItemEntityPacket packet) {
-        PacketSignal signal0 = rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
-        PacketSignal signal1 = rewriteId(packet.getItemRuntimeEntityId(), packet::setItemRuntimeEntityId);
+        PacketSignal signal0 = data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        PacketSignal signal1 = data.rewriteEntityId(packet.getItemRuntimeEntityId(), packet::setItemRuntimeEntityId);
         return mergeSignals(signal0, signal1);
     }
 
     @Override
     public PacketSignal handle(MovePlayerPacket packet) {
-        PacketSignal signal0 = rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
-        PacketSignal signal1 = rewriteId(packet.getRidingRuntimeEntityId(), packet::setRidingRuntimeEntityId);
+        PacketSignal signal0 = data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        PacketSignal signal1 = data.rewriteEntityId(packet.getRidingRuntimeEntityId(), packet::setRidingRuntimeEntityId);
         return mergeSignals(signal0, signal1);
     }
 
     @Override
     public PacketSignal handle(InteractPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(PlayerLocationPacket packet) {
-        return rewriteId(packet.getTargetEntityId(), packet::setTargetEntityId);
+        return data.rewriteEntityId(packet.getTargetEntityId(), packet::setTargetEntityId);
     }
 
     @Override
     public PacketSignal handle(SetEntityLinkPacket packet) {
         EntityLinkData entityLink = packet.getEntityLink();
-        long from = PlayerRewriteUtils.rewriteId(entityLink.from(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-        long to = PlayerRewriteUtils.rewriteId(entityLink.to(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+        long from = PlayerRewriteUtils.rewriteId(entityLink.getFrom(), this.data.getEntityId(), this.data.getOriginalEntityId());
+        long to = PlayerRewriteUtils.rewriteId(entityLink.getTo(), this.data.getEntityId(), this.data.getOriginalEntityId());
 
-        if (from != entityLink.from() || to != entityLink.to()) {
-            packet.setEntityLink(new EntityLinkData(from, to, entityLink.type(), entityLink.immediate(), entityLink.riderInitiated(), entityLink.vehicleAngularVelocity()));
+        if (from != entityLink.getFrom() || to != entityLink.getTo()) {
+            packet.setEntityLink(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated(), entityLink.getVehicleAngularVelocity()));
             return PacketSignal.HANDLED;
         }
         return PacketSignal.UNHANDLED;
@@ -241,12 +232,12 @@ public class EntityMap implements BedrockPacketHandler {
 
     @Override
     public PacketSignal handle(AnimatePacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(AdventureSettingsPacket packet) {
-        return rewriteId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
+        return data.rewriteEntityId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
     }
 
     @Override
@@ -258,7 +249,7 @@ public class EntityMap implements BedrockPacketHandler {
         PacketSignal signal = PacketSignal.UNHANDLED;
 
         for (PlayerListPacket.Entry entry : packet.getEntries()) {
-            long rewriteId = PlayerRewriteUtils.rewriteId(entry.getEntityId(), this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+            long rewriteId = PlayerRewriteUtils.rewriteId(entry.getEntityId(), this.data.getEntityId(), this.data.getOriginalEntityId());
             if (rewriteId != entry.getEntityId()) {
                 signal = PacketSignal.HANDLED;
                 entry.setEntityId(rewriteId);
@@ -269,72 +260,72 @@ public class EntityMap implements BedrockPacketHandler {
 
     @Override
     public PacketSignal handle(UpdateTradePacket packet) {
-        PacketSignal signal0 = rewriteId(packet.getPlayerUniqueEntityId(), packet::setPlayerUniqueEntityId);
-        PacketSignal signal1 = rewriteId(packet.getTraderUniqueEntityId(), packet::setTraderUniqueEntityId);
+        PacketSignal signal0 = data.rewriteEntityId(packet.getPlayerUniqueEntityId(), packet::setPlayerUniqueEntityId);
+        PacketSignal signal1 = data.rewriteEntityId(packet.getTraderUniqueEntityId(), packet::setTraderUniqueEntityId);
         return mergeSignals(signal0, signal1);
     }
 
     @Override
     public PacketSignal handle(RespawnPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(EmoteListPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     public PacketSignal handle(NpcDialoguePacket packet) {
-        return rewriteId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
+        return data.rewriteEntityId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
     }
 
     public PacketSignal handle(NpcRequestPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(EmotePacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(SpawnParticleEffectPacket packet) {
-        return rewriteId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
+        return data.rewriteEntityId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
     }
 
     @Override
     public PacketSignal handle(EntityPickRequestPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(EventPacket packet) {
-        return rewriteId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
+        return data.rewriteEntityId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
     }
 
     @Override
     public PacketSignal handle(UpdatePlayerGameTypePacket packet) {
-        return rewriteId(packet.getEntityId(), packet::setEntityId);
+        return data.rewriteEntityId(packet.getEntityId(), packet::setEntityId);
     }
 
     @Override
     public PacketSignal handle(UpdateAbilitiesPacket packet) {
-        return rewriteId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
+        return data.rewriteEntityId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
     }
 
     @Override
     public PacketSignal handle(ClientCheatAbilityPacket packet) {
-        return rewriteId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
+        return data.rewriteEntityId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
     }
 
     @Override
     public PacketSignal handle(PlayerUpdateEntityOverridesPacket packet) {
-        return rewriteId(packet.getEntityUniqueId(), packet::setEntityUniqueId);
+        return data.rewriteEntityId(packet.getEntityUniqueId(), packet::setEntityUniqueId);
     }
 
     @Override
     public PacketSignal handle(LevelSoundEventPacket packet) {
-        return rewriteId(packet.getEntityUniqueId(), packet::setEntityUniqueId);
+        return data.rewriteEntityId(packet.getEntityUniqueId(), packet::setEntityUniqueId);
     }
 
     @Override
@@ -342,7 +333,7 @@ public class EntityMap implements BedrockPacketHandler {
         PacketSignal signal = PacketSignal.UNHANDLED;
         LongListIterator iterator = packet.getRuntimeEntityIds().listIterator();
         while (iterator.hasNext()) {
-            PacketSignal returnedSignal = rewriteId(iterator.nextLong(), iterator::set);
+            PacketSignal returnedSignal = data.rewriteEntityId(iterator.nextLong(), iterator::set);
             signal = mergeSignals(signal, returnedSignal);
         }
         return signal;
@@ -350,17 +341,17 @@ public class EntityMap implements BedrockPacketHandler {
 
     @Override
     public PacketSignal handle(MovementEffectPacket packet) {
-        return rewriteId(packet.getEntityRuntimeId(), packet::setEntityRuntimeId);
+        return data.rewriteEntityId(packet.getEntityRuntimeId(), packet::setEntityRuntimeId);
     }
 
     @Override
     public PacketSignal handle(MovementPredictionSyncPacket packet) {
-        return rewriteId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
+        return data.rewriteEntityId(packet.getRuntimeEntityId(), packet::setRuntimeEntityId);
     }
 
     @Override
     public PacketSignal handle(UpdateEquipPacket packet) {
-        return rewriteId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
+        return data.rewriteEntityId(packet.getUniqueEntityId(), packet::setUniqueEntityId);
     }
 
     @Override
@@ -368,78 +359,23 @@ public class EntityMap implements BedrockPacketHandler {
         PacketSignal signal = PacketSignal.UNHANDLED;
         CameraAttachToEntityInstruction attachInstruction = packet.getAttachInstruction();
         if (attachInstruction != null) {
-            PacketSignal returnedSignal = rewriteId(attachInstruction.getUniqueEntityId(), attachInstruction::setUniqueEntityId);
+            PacketSignal returnedSignal = data.rewriteEntityId(attachInstruction.getUniqueEntityId(), attachInstruction::setUniqueEntityId);
             signal = mergeSignals(signal, returnedSignal);
         }
         return signal;
     }
 
     @Override
-    public PacketSignal handle(PrimitiveShapesPacket packet) {
+    public PacketSignal handle(DebugDrawerPacket packet) {
         PacketSignal signal = PacketSignal.UNHANDLED;
-        ListIterator<PrimitiveShape> iterator = packet.getShapes().listIterator();
-        while (iterator.hasNext()) {
-            PrimitiveShape shape = iterator.next();
+        for (DebugShape shape : packet.getShapes()) {
             Long attachedEntityId = shape.getAttachedToEntityId();
             if (attachedEntityId != null) {
-                PacketSignal returnedSignal = rewritePrimitiveShapeAttachedEntityId(iterator, shape, attachedEntityId);
+                PacketSignal returnedSignal = data.rewriteEntityId(attachedEntityId, shape::setAttachedToEntityId);
                 signal = mergeSignals(signal, returnedSignal);
             }
         }
         return signal;
-    }
-
-    private PacketSignal rewritePrimitiveShapeAttachedEntityId(ListIterator<PrimitiveShape> iterator, PrimitiveShape shape, long attachedEntityId) {
-        long rewriteId = PlayerRewriteUtils.rewriteId(attachedEntityId, this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
-        if (rewriteId == attachedEntityId) {
-            return PacketSignal.UNHANDLED;
-        }
-
-        iterator.set(copyPrimitiveShape(shape, rewriteId));
-        return PacketSignal.HANDLED;
-    }
-
-    private static PrimitiveShape copyPrimitiveShape(PrimitiveShape shape, Long attachedToEntityId) {
-        PrimitiveShape.Type type = shape.getType();
-        if (type == null) {
-            return new PrimitiveShape(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
-                    shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), attachedToEntityId);
-        }
-
-        return switch (type) {
-            case ARROW -> {
-                PrimitiveArrow arrow = (PrimitiveArrow) shape;
-                yield new PrimitiveArrow(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
-                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), arrow.getArrowEndPosition(),
-                        arrow.getArrowHeadLength(), arrow.getArrowHeadRadius(), arrow.getArrowHeadSegments(), attachedToEntityId);
-            }
-            case BOX -> {
-                PrimitiveBox box = (PrimitiveBox) shape;
-                yield new PrimitiveBox(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
-                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), box.getBoxBounds(), attachedToEntityId);
-            }
-            case CIRCLE -> {
-                PrimitiveCircle circle = (PrimitiveCircle) shape;
-                yield new PrimitiveCircle(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
-                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), circle.getSegments(), attachedToEntityId);
-            }
-            case LINE -> {
-                PrimitiveLine line = (PrimitiveLine) shape;
-                yield new PrimitiveLine(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
-                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), line.getLineEndPosition(), attachedToEntityId);
-            }
-            case SPHERE -> {
-                PrimitiveSphere sphere = (PrimitiveSphere) shape;
-                yield new PrimitiveSphere(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
-                        shape.getTotalTimeLeft(), shape.getColor(), shape.getMaximumRenderDistance(), sphere.getSegments(), attachedToEntityId);
-            }
-            case TEXT -> {
-                PrimitiveText text = (PrimitiveText) shape;
-                yield new PrimitiveText(shape.getId(), shape.getDimension(), shape.getPosition(), shape.getScale(), shape.getRotation(),
-                        shape.getTotalTimeLeft(), shape.getColor(), text.getText(), text.isUseRotation(), text.getBackgroundColor(),
-                        text.isDepthTest(), text.isShowBackface(), text.isShowTextBackface(), shape.getMaximumRenderDistance(), attachedToEntityId);
-            }
-        };
     }
 
     private PacketSignal rewriteMetadata(EntityDataMap metadata) {
@@ -447,7 +383,7 @@ public class EntityMap implements BedrockPacketHandler {
         for (EntityDataType<Long> data : ENTITY_DATA_FIELDS) {
             Long id = metadata.get(data);
             if (id != null) {
-                long rewriteId = PlayerRewriteUtils.rewriteId(id, this.rewrite.getEntityId(), this.rewrite.getOriginalEntityId());
+                long rewriteId = PlayerRewriteUtils.rewriteId(id, this.data.getEntityId(), this.data.getOriginalEntityId());
                 if (rewriteId != id) {
                     metadata.put(data, rewriteId);
                     signal = PacketSignal.HANDLED;

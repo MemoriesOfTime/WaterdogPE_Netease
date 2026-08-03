@@ -16,20 +16,24 @@
 package dev.waterdog.waterdogpe.network.protocol.handler;
 
 import dev.waterdog.waterdogpe.network.connection.ProxiedConnection;
+import dev.waterdog.waterdogpe.network.connection.codec.packet.BedrockPacketCodec;
 import dev.waterdog.waterdogpe.network.protocol.Signals;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.ReferenceCountUtil;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
+import it.unimi.dsi.fastutil.ints.IntSet;
 import lombok.Data;
 import lombok.extern.log4j.Log4j2;
 import org.cloudburstmc.protocol.bedrock.PacketDirection;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
+import org.cloudburstmc.protocol.bedrock.data.PacketRecipient;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockPacketWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
-import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
-import org.cloudburstmc.protocol.bedrock.util.Preconditions;
+import org.cloudburstmc.protocol.common.PacketSignal;
+import org.cloudburstmc.protocol.common.util.Preconditions;
 
 import java.util.ListIterator;
 
@@ -41,10 +45,13 @@ public class ProxyBatchBridge implements BedrockPacketHandler {
 
     private ProxyPacketHandler handler;
     private boolean forceEncode;
+    private PacketDirection direction;
+    private final IntSet undecodablePacketIds = new IntOpenHashSet();
 
-    public ProxyBatchBridge(BedrockCodec codec, BedrockCodecHelper helper, ProxyPacketHandler handler) {
+    public ProxyBatchBridge(BedrockCodec codec, BedrockCodecHelper helper, ProxyPacketHandler handler, PacketDirection direction) {
         this.codec = codec;
         this.helper = helper;
+        this.direction = direction;
         this.setHandler(handler);
     }
 
@@ -57,10 +64,15 @@ public class ProxyBatchBridge implements BedrockPacketHandler {
             }
 
             if (wrapper.getPacket() == null) {
-                log.debug("Removing undecoded packet from batch (packetId={})", wrapper.getPacketId());
-                iterator.remove();
-                wrapper.release();
-                batch.modify();
+                if (wrapper.getPacketBuffer() == null) {
+                    // Nothing decoded and nothing to forward: this wrapper carries no packet at all.
+                    log.debug("Removing empty packet from batch (packetId={})", wrapper.getPacketId());
+                    iterator.remove();
+                    wrapper.release();
+                    batch.modify();
+                }
+                // Otherwise keep it. A wrapper that still owns its buffer is forwarded byte-exact by
+                // the encoder, which always beats dropping a packet we merely could not read.
                 continue;
             }
 
@@ -86,7 +98,9 @@ public class ProxyBatchBridge implements BedrockPacketHandler {
         try {
             PacketSignal signal = this.handler.handlePacket(packet);
             PacketSignal rewriteSignal = this.handler.doPacketRewrite(packet);
-            this.handler.getRewriteMaps().getEntityTracker().trackEntity(packet);
+            if (this.direction.getInbound() == PacketRecipient.CLIENT) { // only track packets sent by downstream
+                this.handler.getRewriteMaps().getEntityTracker().trackEntity(packet);
+            }
             return Signals.mergeSignals(signal, rewriteSignal);
         } catch (Exception e) {
             throw new IllegalStateException("Error while handling " + packet.getPacketType(), e);
@@ -99,13 +113,38 @@ public class ProxyBatchBridge implements BedrockPacketHandler {
             msg.skipBytes(wrapper.getHeaderLength()); // skip header
             wrapper.setPacket(this.codec.tryDecode(helper, msg, wrapper.getPacketId(), direction.getInbound()));
         } catch (IllegalArgumentException e) {
-            log.warn("Skipping packet with wrong direction (packetId={}): {}", wrapper.getPacketId(), e.getMessage());
+            // Sent to the wrong recipient. Forward it untouched rather than dropping it: the peer
+            // ignores what it does not expect, while a silent drop breaks flows the proxy is not
+            // part of and leaves no trace of where the packet went.
+            this.passThroughUndecodable(wrapper, "wrong direction", e);
         } catch (Throwable t) {
-            log.warn("Failed to decode packet", t);
-            throw t;
+            // One packet the proxy can not read must never cost its whole batch, let alone the
+            // connection. Degrade it to a byte-exact passthrough, like an unregistered packet id.
+            this.passThroughUndecodable(wrapper, "failed to decode", t);
         } finally {
             msg.release();
         }
+    }
+
+    /**
+     * Replaces an undecodable packet with an {@link org.cloudburstmc.protocol.bedrock.packet.UnknownPacket}
+     * so the batch still carries it and the encoder forwards it unchanged.
+     * <p>
+     * Warns once per packet id, then drops to debug: a malformed packet type can arrive every tick,
+     * and packet ids are bounded so the set stays small. One bridge belongs to one connection and is
+     * only used on its event loop, so no synchronization is needed.
+     */
+    private void passThroughUndecodable(BedrockPacketWrapper wrapper, String reason, Throwable error) {
+        int packetId = wrapper.getPacketId();
+        if (this.undecodablePacketIds.add(packetId)) {
+            log.warn("Forwarding packet {} undecoded ({}): {}", packetId, reason, error.getMessage());
+            if (log.isDebugEnabled()) {
+                log.debug("Undecodable packet {}", packetId, error);
+            }
+        } else if (log.isDebugEnabled()) {
+            log.debug("Forwarding packet {} undecoded ({})", packetId, reason, error);
+        }
+        wrapper.setPacket(BedrockPacketCodec.toUnknownPacket(wrapper));
     }
 
     public void sendProxiedBatch(BedrockBatchWrapper batch) {

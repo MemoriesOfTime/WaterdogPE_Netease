@@ -17,20 +17,16 @@ package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
-import dev.waterdog.waterdogpe.network.protocol.handler.PluginPacketHandler;
-import org.cloudburstmc.protocol.bedrock.PacketDirection;
-import org.cloudburstmc.protocol.bedrock.packet.*;
-import dev.waterdog.waterdogpe.event.defaults.FastTransferRequestEvent;
-import dev.waterdog.waterdogpe.event.defaults.PostTransferCompleteEvent;
-import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
-import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
-import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import dev.waterdog.waterdogpe.network.protocol.Signals;
-import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
-import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
+import dev.waterdog.waterdogpe.network.protocol.handler.PluginPacketHandler;
+import dev.waterdog.waterdogpe.player.ProxiedPlayer;
+import org.cloudburstmc.protocol.bedrock.PacketDirection;
+import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
+import org.cloudburstmc.protocol.bedrock.packet.DisconnectPacket;
+import org.cloudburstmc.protocol.bedrock.packet.LevelChunkPacket;
+import org.cloudburstmc.protocol.common.PacketSignal;
 
 import static dev.waterdog.waterdogpe.network.protocol.Signals.mergeSignals;
-import static dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils.injectEntityImmobile;
 
 public class ConnectedDownstreamHandler extends AbstractDownstreamHandler {
 
@@ -50,53 +46,17 @@ public class ConnectedDownstreamHandler extends AbstractDownstreamHandler {
     }
 
     @Override
-    public PacketSignal handle(PlayStatusPacket packet) {
-        if (!this.player.acceptPlayStatus() || packet.getStatus() != PlayStatusPacket.Status.PLAYER_SPAWN) {
-            return PacketSignal.UNHANDLED;
-        }
-
-        this.player.setAcceptPlayStatus(false);
-        RewriteData rewriteData = this.player.getRewriteData();
-        if (!rewriteData.hasImmobileFlag()) {
-            injectEntityImmobile(this.player.getConnection(), rewriteData.getEntityId(), false);
-        }
-
-        SetLocalPlayerAsInitializedPacket initializedPacket = new SetLocalPlayerAsInitializedPacket();
-        initializedPacket.setRuntimeEntityId(rewriteData.getEntityId());
-        this.connection.sendPacket(initializedPacket);
-
-        PostTransferCompleteEvent event = new PostTransferCompleteEvent(this.connection, this.player);
-        this.player.getProxy().getEventManager().callEvent(event);
-        return PacketSignal.UNHANDLED;
-    }
-
-    @Override
-    public PacketSignal handle(TransferPacket packet) {
-        if (!this.player.getProxy().getConfiguration().useFastTransfer()) {
-            return PacketSignal.UNHANDLED;
-        }
-
-        ServerInfo serverInfo = this.player.getProxy().getServerInfo(packet.getAddress());
-        if (serverInfo == null) {
-            serverInfo = this.player.getProxy().getServerInfo(packet.getAddress(), packet.getPort());
-        }
-
-        FastTransferRequestEvent event = new FastTransferRequestEvent(serverInfo, this.player, packet.getAddress(), packet.getPort());
-        this.player.getProxy().getEventManager().callEvent(event);
-
-        if (!event.isCancelled() && event.getServerInfo() != null) {
-            this.player.connect(event.getServerInfo());
-            return Signals.CANCEL;
-        }
+    public PacketSignal handle(LevelChunkPacket packet) {
+        // Remember whether this server serves chunks via the sub-chunk request system so injected
+        // empty chunks match it and the client keeps requesting sub-chunks instead of breaking.
+        this.player.setSubChunkRequestMode(packet.isRequestSubChunks());
         return PacketSignal.UNHANDLED;
     }
 
     @Override
     public final PacketSignal handle(DisconnectPacket packet) {
-        if (this.player.sendToFallback(this.connection.getServerInfo(), ReconnectReason.SERVER_KICK, packet.getKickMessage())) {
-            return Signals.CANCEL;
-        }
-        this.player.disconnect(new TranslationContainer("waterdog.downstream.kicked", packet.getKickMessage()));
+        // This is not really a failure
+        this.player.onDownstreamFailure(this.connection, ReconnectReason.SERVER_KICK, packet.getKickMessage());
         return Signals.CANCEL;
     }
 }

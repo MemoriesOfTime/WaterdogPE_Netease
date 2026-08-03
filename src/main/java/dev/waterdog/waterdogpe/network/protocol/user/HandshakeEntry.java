@@ -35,21 +35,25 @@ public class HandshakeEntry {
     private final String xuid;
     private final UUID uuid;
     private final String displayName;
+    private final String minecraftId;
     private final boolean xboxAuthed;
     private final boolean isChainPayload;
     private final boolean netEaseClient;
     private final LoginData.NetEaseData netEaseData;
+    private final boolean shouldSendCertificateChain;
     @Setter
     private ProtocolVersion protocol;
 
-    public HandshakeEntry(ECPublicKey identityPublicKey, JsonObject clientData, String xuid, UUID uuid, String displayName, boolean xboxAuthed, ProtocolVersion protocol, boolean isChainPayload, boolean netEaseClient, LoginData.NetEaseData netEaseData) {
+    public HandshakeEntry(ECPublicKey identityPublicKey, JsonObject clientData, String xuid, UUID uuid, String displayName, String minecraftId, boolean xboxAuthed, ProtocolVersion protocol, boolean shouldSendCertificateChain, boolean isChainPayload, boolean netEaseClient, LoginData.NetEaseData netEaseData) {
         this.identityPublicKey = identityPublicKey;
         this.clientData = clientData;
         this.xuid = xuid;
         this.uuid = uuid;
         this.displayName = displayName;
+        this.minecraftId = minecraftId;
         this.xboxAuthed = xboxAuthed;
         this.protocol = protocol;
+        this.shouldSendCertificateChain = shouldSendCertificateChain;
         this.isChainPayload = isChainPayload;
         this.netEaseClient = netEaseClient;
         this.netEaseData = netEaseData;
@@ -66,15 +70,17 @@ public class HandshakeEntry {
         proxy.getEventManager().callEvent(event);
 
         LoginData.LoginDataBuilder builder = LoginData.builder();
-        builder.displayName(this.displayName);
-        builder.uuid(this.uuid);
-        builder.xuid(this.xuid);
+        builder.displayName(event.getDisplayName());
+        builder.uuid(event.getUuid());
+        builder.xuid(event.getXuid());
+        builder.minecraftId(this.minecraftId);
         builder.xboxAuthed(this.xboxAuthed);
         builder.protocol(this.protocol);
         builder.joinHostname(this.clientData.get("ServerAddress").getAsString().split(":")[0]);
         builder.address(session.getSocketAddress());
         builder.keyPair(event.getKeyPair());
         builder.clientData(this.clientData);
+        builder.shouldSendCertificateChain(this.shouldSendCertificateChain);
         builder.isChainPayload(this.isChainPayload);
         builder.netEaseClient(this.netEaseClient);
         builder.netEaseData(this.netEaseData);

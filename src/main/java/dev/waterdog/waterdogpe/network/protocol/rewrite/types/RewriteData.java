@@ -17,6 +17,7 @@ package dev.waterdog.waterdogpe.network.protocol.rewrite.types;
 
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
+import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
 import lombok.Getter;
 import lombok.Setter;
 import org.cloudburstmc.math.vector.Vector2f;
@@ -24,8 +25,10 @@ import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
 import org.cloudburstmc.protocol.bedrock.data.BlockPropertyData;
 import org.cloudburstmc.protocol.bedrock.data.GameRuleData;
+import org.cloudburstmc.protocol.common.PacketSignal;
 
 import java.util.List;
+import java.util.function.LongConsumer;
 
 /**
  * Rewrite data of a present player.
@@ -64,7 +67,12 @@ public class RewriteData {
     @Getter
     private int dimension = 0;
     @Getter
-    private TransferCallback transferCallback;
+    private volatile TransferCallback transferCallback;
+    /**
+     * Captured from the first StartGamePacket: settings the client can not change without a reconnect.
+     */
+    @Getter
+    private StartGameSettings startGameSettings;
 
     @Getter
     private Vector3f spawnPosition;
@@ -82,7 +90,6 @@ public class RewriteData {
     @Getter
     private String proxyName;
 
-
     @Getter
     private BedrockCodecHelper codecHelper;
 
@@ -90,8 +97,43 @@ public class RewriteData {
         this.proxyName = ProxyServer.getInstance().getConfiguration().getName();
     }
 
+    /**
+     * Atomically claims the transfer slot. Downstream connections run on different event loops,
+     * so two of them can reach START_GAME concurrently and only one may win.
+     *
+     * @return false if another transfer is still in progress.
+     */
+    public synchronized boolean trySetTransferCallback(TransferCallback callback) {
+        if (this.transferCallback != null && this.transferCallback.getPhase() != TransferCallback.TransferPhase.RESET) {
+            return false;
+        }
+        this.transferCallback = callback;
+        return true;
+    }
+
+    /**
+     * Clears the transfer slot only if it is still owned by the given callback.
+     */
+    public synchronized void clearTransferCallback(TransferCallback callback) {
+        if (this.transferCallback == callback) {
+            this.transferCallback = null;
+        }
+    }
+
+    public synchronized void setTransferCallback(TransferCallback callback) {
+        this.transferCallback = callback;
+    }
+
     public boolean hasImmobileFlag() {
         return this.immobileFlag;
     }
 
+    public PacketSignal rewriteEntityId(long from, LongConsumer setter) {
+        long rewriteId = PlayerRewriteUtils.rewriteId(from, getEntityId(), getOriginalEntityId());
+        if (rewriteId == from) {
+            return PacketSignal.UNHANDLED;
+        }
+        setter.accept(rewriteId);
+        return PacketSignal.HANDLED;
+    }
 }

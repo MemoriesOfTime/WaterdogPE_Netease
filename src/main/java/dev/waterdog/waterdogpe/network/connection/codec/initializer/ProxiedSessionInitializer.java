@@ -15,6 +15,7 @@
 
 package dev.waterdog.waterdogpe.network.connection.codec.initializer;
 
+import dev.mot.protocol.extension.NetEaseCompression;
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.network.connection.codec.batch.BedrockBatchDecoder;
 import dev.waterdog.waterdogpe.network.connection.codec.batch.BedrockBatchEncoder;
@@ -29,7 +30,6 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
 import lombok.AllArgsConstructor;
 import lombok.extern.log4j.Log4j2;
-import org.cloudburstmc.protocol.bedrock.netty.codec.compression.NetEaseCompression;
 import org.cloudburstmc.netty.channel.raknet.config.RakChannelOption;
 import org.cloudburstmc.netty.channel.raknet.packet.RakMessage;
 import org.cloudburstmc.protocol.bedrock.BedrockPeer;
@@ -37,7 +37,7 @@ import org.cloudburstmc.protocol.bedrock.BedrockSession;
 import org.cloudburstmc.protocol.bedrock.data.CompressionAlgorithm;
 import org.cloudburstmc.protocol.bedrock.data.PacketCompressionAlgorithm;
 import org.cloudburstmc.protocol.bedrock.netty.codec.compression.*;
-import org.cloudburstmc.protocol.bedrock.util.Zlib;
+import org.cloudburstmc.protocol.common.util.Zlib;
 
 @Log4j2
 @AllArgsConstructor

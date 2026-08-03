@@ -20,7 +20,7 @@ import dev.waterdog.waterdogpe.network.protocol.rewrite.RewriteMaps;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
-import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
+import org.cloudburstmc.protocol.common.PacketSignal;
 
 public interface ProxyPacketHandler extends BedrockPacketHandler {
     void sendProxiedBatch(BedrockBatchWrapper batch);

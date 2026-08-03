@@ -15,21 +15,23 @@
 
 package dev.waterdog.waterdogpe.network.protocol.handler.upstream;
 
+import dev.waterdog.waterdogpe.ProxyServer;
+import dev.waterdog.waterdogpe.event.defaults.PlayerChatEvent;
 import dev.waterdog.waterdogpe.network.connection.ProxiedConnection;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
+import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
+import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.handler.ProxyPacketHandler;
+import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.RewriteMaps;
+import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import lombok.Setter;
 import org.cloudburstmc.protocol.bedrock.data.PlayerActionType;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import dev.waterdog.waterdogpe.ProxyServer;
-import dev.waterdog.waterdogpe.event.defaults.PlayerChatEvent;
-import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
-import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
-import dev.waterdog.waterdogpe.player.ProxiedPlayer;
-import dev.waterdog.waterdogpe.network.protocol.Signals;
-import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
+import org.cloudburstmc.protocol.common.PacketSignal;
+
+import static dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils.injectAirSubChunkResponse;
 
 /**
  * Main handler for handling packets received from upstream.
@@ -70,14 +72,31 @@ public class ConnectedUpstreamHandler extends AbstractUpstreamHandler implements
     }
 
     @Override
+    public PacketSignal handle(SubChunkRequestPacket packet) {
+        // Only the fake intermediate chunks (phase 1) are answered by us. On the target hop (phase 2) the new
+        // server is wired to the client and provides the real chunks, so its sub-chunk requests must pass through.
+        TransferCallback callback = this.player.getRewriteData().getTransferCallback();
+        if (callback == null || callback.getPhase() != TransferCallback.TransferPhase.PHASE_1) {
+            return PacketSignal.UNHANDLED;
+        }
+        injectAirSubChunkResponse(this.player.getConnection(), packet);
+        return Signals.CANCEL;
+    }
+
+    @Override
     public final PacketSignal handle(TextPacket packet) {
         PlayerChatEvent event = new PlayerChatEvent(this.player, packet.getMessage());
         ProxyServer.getInstance().getEventManager().callEvent(event);
-        packet.setMessage(event.getMessage());
+
         if (event.isCancelled()) {
             return Signals.CANCEL;
         }
-        return PacketSignal.HANDLED;
+
+        if (event.isChanged()) {
+            packet.setMessage(event.getMessage());
+            return PacketSignal.HANDLED;
+        }
+        return PacketSignal.UNHANDLED;
     }
 
     @Override
@@ -93,6 +112,18 @@ public class ConnectedUpstreamHandler extends AbstractUpstreamHandler implements
     public PacketSignal handle(ClientCacheBlobStatusPacket packet) {
         if (this.player.getProtocol().isBefore(ProtocolVersion.MINECRAFT_PE_1_18_30)) {
             this.player.getChunkBlobs().addAll(packet.getNaks());
+        }
+        return PacketSignal.UNHANDLED;
+    }
+
+    @Override
+    public PacketSignal handle(ContainerClosePacket packet) {
+        if (packet.getId() == -1) {
+            // I am not sure if -1 means close all or close the top one
+            // Might require validation
+            this.player.getOpenContainers().clear();
+        } else {
+            this.player.getOpenContainers().remove(packet.getId());
         }
         return PacketSignal.UNHANDLED;
     }

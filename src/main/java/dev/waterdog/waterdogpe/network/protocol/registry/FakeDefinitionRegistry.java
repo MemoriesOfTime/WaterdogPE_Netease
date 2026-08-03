@@ -3,12 +3,13 @@ package dev.waterdog.waterdogpe.network.protocol.registry;
 import it.unimi.dsi.fastutil.ints.Int2ObjectFunction;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import lombok.Getter;
 import org.cloudburstmc.protocol.bedrock.data.definitions.BlockDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleBlockDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleItemDefinition;
-import org.cloudburstmc.protocol.bedrock.definition.Definition;
-import org.cloudburstmc.protocol.bedrock.definition.DefinitionRegistry;
+import org.cloudburstmc.protocol.common.Definition;
+import org.cloudburstmc.protocol.common.DefinitionRegistry;
 
 public class FakeDefinitionRegistry<D extends Definition> implements DefinitionRegistry<D> {
 
@@ -20,6 +21,7 @@ public class FakeDefinitionRegistry<D extends Definition> implements DefinitionR
         return new FakeDefinitionRegistry<>(rid -> new SimpleItemDefinition("unknown", rid, false));
     }
 
+    @Getter
     private final Int2ObjectMap<D> runtimeMap = new Int2ObjectOpenHashMap<>();
     private final Int2ObjectFunction<D> factory;
 
@@ -42,6 +44,7 @@ public class FakeDefinitionRegistry<D extends Definition> implements DefinitionR
 
     @Override
     public boolean isRegistered(D definition) {
-        return this.runtimeMap.get(definition.runtimeId()) == definition;
+        return this.runtimeMap.get(definition.getRuntimeId()) == definition;
     }
+
 }

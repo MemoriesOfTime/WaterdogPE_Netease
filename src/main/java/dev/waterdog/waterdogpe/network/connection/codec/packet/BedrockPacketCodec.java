@@ -19,6 +19,8 @@ import dev.waterdog.waterdogpe.network.NetworkMetrics;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToMessageCodec;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
+import it.unimi.dsi.fastutil.ints.IntSet;
 import lombok.Getter;
 import lombok.extern.log4j.Log4j2;
 import org.cloudburstmc.protocol.bedrock.PacketDirection;
@@ -47,6 +49,7 @@ public abstract class BedrockPacketCodec extends MessageToMessageCodec<BedrockBa
 
     private boolean alwaysDecode;
     private PacketRecipient inboundRecipient;
+    private final IntSet undecodablePacketIds = new IntOpenHashSet();
 
     @Override
     public void handlerAdded(ChannelHandlerContext ctx) {
@@ -111,17 +114,66 @@ public abstract class BedrockPacketCodec extends MessageToMessageCodec<BedrockBa
         ByteBuf msg = wrapper.getPacketBuffer().retainedSlice();
         try {
             int index = msg.readerIndex();
-            this.decodeHeader(msg, wrapper);
-            wrapper.setHeaderLength(msg.readerIndex() - index);
-            if (this.alwaysDecode) { // Otherwise, we are decoding at other place
-                wrapper.setPacket(this.codec.tryDecode(helper, msg, wrapper.getPacketId(), this.inboundRecipient));
+            try {
+                this.decodeHeader(msg, wrapper);
+            } catch (Throwable t) {
+                // The header carries the packet id and the start of the payload. Without it the packet
+                // can neither be understood nor forwarded, so a header failure stays fatal.
+                log.error("Failed to decode packet header", t);
+                throw t;
             }
-        } catch (Throwable t) {
-            log.error("Failed to decode packet", t);
-            throw t;
+            wrapper.setHeaderLength(msg.readerIndex() - index);
+
+            if (this.alwaysDecode) { // Otherwise, we are decoding at other place
+                try {
+                    wrapper.setPacket(this.codec.tryDecode(helper, msg, wrapper.getPacketId(), this.inboundRecipient));
+                } catch (Throwable t) {
+                    // One packet we can not deserialize must never cost the whole connection. Degrade it
+                    // to an UnknownPacket so it is forwarded byte-exact, exactly like any packet id that
+                    // is not registered in the codec.
+                    this.warnUndecodable(wrapper.getPacketId(), t);
+                    wrapper.setPacket(toUnknownPacket(wrapper));
+                }
+            }
         } finally {
             msg.release();
         }
+    }
+
+    /**
+     * Warns once per packet id, then drops to debug. A single malformed packet type can arrive every
+     * tick, and packet ids are bounded, so the set can not grow without limit. The handler is bound to
+     * one channel and only touched on its event loop, so no synchronization is needed.
+     */
+    private void warnUndecodable(int packetId, Throwable error) {
+        if (this.undecodablePacketIds.add(packetId)) {
+            log.warn("Failed to decode packet {}, forwarding it undecoded", packetId, error);
+        } else if (log.isDebugEnabled()) {
+            log.debug("Failed to decode packet {}, forwarding it undecoded", packetId, error);
+        }
+    }
+
+    /**
+     * Wraps a packet that could not be deserialized as an {@link UnknownPacket} carrying its raw
+     * payload. Encoding such a packet writes the payload back unchanged, and
+     * {@link #encode(ChannelHandlerContext, BedrockPacketWrapper)} passes the original buffer through
+     * untouched anyway, so the packet reaches the peer byte for byte.
+     * <p>
+     * The payload is re-sliced from the wrapper because a failed decode leaves the reader index of the
+     * working slice in an undefined state.
+     */
+    public static UnknownPacket toUnknownPacket(BedrockPacketWrapper wrapper) {
+        UnknownPacket unknown = new UnknownPacket();
+        unknown.setPacketId(wrapper.getPacketId());
+
+        ByteBuf slice = wrapper.getPacketBuffer().retainedSlice();
+        try {
+            slice.skipBytes(wrapper.getHeaderLength());
+            unknown.setPayload(slice.readRetainedSlice(slice.readableBytes()));
+        } finally {
+            slice.release();
+        }
+        return unknown;
     }
 
     public abstract void encodeHeader(ByteBuf buf, BedrockPacketWrapper msg);
@@ -148,7 +200,7 @@ public abstract class BedrockPacketCodec extends MessageToMessageCodec<BedrockBa
         if (packet instanceof UnknownPacket) {
             return ((UnknownPacket) packet).getPacketId();
         }
-        return this.codec.getPacketDefinition(packet.getClass()).id();
+        return this.codec.getPacketDefinition(packet.getClass()).getId();
     }
 
     public final BedrockPacketCodec setCodecHelper(BedrockCodec codec, BedrockCodecHelper helper) {

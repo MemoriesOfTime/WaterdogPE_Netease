@@ -21,8 +21,10 @@ import dev.waterdog.waterdogpe.network.connection.codec.initializer.ProxiedSessi
 import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
-import org.cloudburstmc.protocol.bedrock.packet.*;
-import org.cloudburstmc.protocol.bedrock.packet.PacketSignal;
+import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
+import org.cloudburstmc.protocol.bedrock.packet.NetworkSettingsPacket;
+import org.cloudburstmc.protocol.bedrock.packet.RequestNetworkSettingsPacket;
+import org.cloudburstmc.protocol.common.PacketSignal;
 
 public class CompressionInitHandler extends AbstractDownstreamHandler {
 

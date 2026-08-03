@@ -16,10 +16,14 @@
 package dev.waterdog.waterdogpe.event;
 
 import dev.waterdog.waterdogpe.ProxyServer;
+import dev.waterdog.waterdogpe.plugin.Plugin;
 import dev.waterdog.waterdogpe.utils.ThreadFactoryBuilder;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import lombok.Getter;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
 
@@ -33,6 +37,7 @@ public class EventManager {
     private final ProxyServer proxy;
     @Getter
     private final ExecutorService threadedExecutor;
+    @Getter
     private final Object2ObjectOpenHashMap<Class<? extends Event>, EventHandler> handlerMap = new Object2ObjectOpenHashMap<>();
 
     public EventManager(ProxyServer proxy) {
@@ -61,6 +66,43 @@ public class EventManager {
     public <T extends Event> void subscribe(Class<T> event, Consumer<T> handler, EventPriority priority) {
         EventHandler eventHandler = this.handlerMap.computeIfAbsent(event, e -> new EventHandler(event, this));
         eventHandler.subscribe((Consumer<Event>) handler, priority);
+    }
+
+    /**
+     * Remove every handler whose owning class was loaded by the given ClassLoader.
+     * Intended for plugin hot-reload: drops subscriptions that would otherwise keep an
+     * unloaded plugin's classes alive (and possibly fire on stale state).
+     *
+     * @param loader the ClassLoader of the plugin being unloaded, or null to match handlers
+     *               whose owning class has no defining ClassLoader (e.g. JDK lambdas from
+     *               the bootstrap loader — rarely the target, so null usually removes nothing)
+     * @return total number of handlers removed across all events
+     */
+    public int unsubscribe(ClassLoader loader) {
+        int removed = 0;
+        // handlerMap is a fastutil Object2ObjectOpenHashMap; iterate a snapshot to allow removal
+        for (Iterator<Map.Entry<Class<? extends Event>, EventHandler>> it = new ArrayList<>(this.handlerMap.entrySet()).iterator(); it.hasNext(); ) {
+            Map.Entry<Class<? extends Event>, EventHandler> entry = it.next();
+            EventHandler handler = entry.getValue();
+            removed += handler.unsubscribe(consumer -> {
+                ClassLoader consumerLoader = consumer.getClass().getClassLoader();
+                return consumerLoader != null && consumerLoader == loader;
+            });
+            if (handler.isEmpty()) {
+                this.handlerMap.remove(entry.getKey());
+            }
+        }
+        return removed;
+    }
+
+    /**
+     * Convenience overload: unsubscribe every handler defined by the given plugin's ClassLoader.
+     */
+    public int unsubscribe(Plugin plugin) {
+        if (plugin == null) {
+            return 0;
+        }
+        return this.unsubscribe(plugin.getClass().getClassLoader());
     }
 
     /**

@@ -59,8 +59,23 @@ public class NetworkSettings extends YamlConfig {
     @Comment("Enable RakNet cookies for additional security. Do NOT disable this unless you know what you are doing.")
     private boolean enableCookies = true;
 
+    @Path("enable_proxy_protocol")
+    @Accessors(fluent = true)
+    @Comment("Enable HAProxy PROXY protocol (v1/v2) so the proxy can read the real client address when running behind a load balancer (e.g. HAProxy/UDP forwarder)")
+    private boolean enableProxyProtocol = false;
+
     @Path("error_timeout")
     @Accessors(fluent = true)
     @Comment("How many seconds should a connection be blocked if an error is thrown. Set to 0 to disable.")
     private int errorTimeout = 15;
+
+    @Path("login_timeout")
+    @Accessors(fluent = true)
+    @Comment("How many seconds a connection has to complete the login handshake (network settings -> login -> client-to-server handshake) before it is disconnected. Set to 0 to disable.")
+    private int loginTimeout = 10;
+
+    @Path("random_downstream_loopback_address")
+    @Accessors(fluent = true)
+    @Comment("Bind each downstream connection to a random 127.0.0.0/8 source address when the target server is on loopback. Certain server softwares like BDS rate limit connections per IP, this causes problems when transferring multiple players at the same time to a certain server. Requires an OS that allows binding the whole loopback range.")
+    private boolean randomDownstreamLoopbackAddress = false;
 }
