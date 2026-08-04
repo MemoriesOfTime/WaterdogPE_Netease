@@ -398,12 +398,12 @@ public class PackManager {
         ResourcePacksInfoPacket infoPacket = new ResourcePacksInfoPacket();
         infoPacket.setForcedToAccept(this.proxy.getConfiguration().isForceServerPacks());
         infoPacket.setVibrantVisualsForceDisabled(this.proxy.getConfiguration().isForceDisableVibrantVisuals());
-        infoPacket.setWorldTemplateId(UUID.randomUUID());
+        infoPacket.setWorldTemplateId(new UUID(0L, 0L));
         infoPacket.setWorldTemplateVersion("");
 
         ResourcePackStackPacket stackPacket = new ResourcePackStackPacket();
         stackPacket.setForcedToAccept(this.proxy.getConfiguration().isOverwriteClientPacks());
-        stackPacket.setGameVersion("");
+        stackPacket.setGameVersion("*");
 
         boolean hasAddonPacks = false;
         boolean hasCdnPacks = false;
