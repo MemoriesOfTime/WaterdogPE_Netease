@@ -254,10 +254,12 @@ public class PlayerRewriteUtils {
             return;
         }
         PlayerListPacket packet = new PlayerListPacket();
-        packet.setAction(PlayerListPacket.Action.REMOVE);
+        packet.setAction(PlayerListPacket.Action.REMOVE); // For backwards compatibility
         List<PlayerListPacket.Entry> entries = new ArrayList<>();
         for (UUID uuid : playerList) {
-            entries.add(new PlayerListPacket.Entry(uuid));
+            var entry = new PlayerListPacket.Entry(uuid);
+            entry.setAction(PlayerListPacket.Action.REMOVE);
+            entries.add(entry);
         }
         packet.getEntries().addAll(entries);
         session.sendPacket(packet);
@@ -268,7 +270,16 @@ public class PlayerRewriteUtils {
             return;
         }
 
-        int effectsCount = version.isAfter(ProtocolVersion.MINECRAFT_PE_1_19_0) ? 30 : 28;
+        int effectsCount;
+        if (version.isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_130)) {
+            effectsCount = 37;
+        } else if (version.isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_21_0)) {
+            effectsCount = 36;
+        } else if (version.isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_18_0)) {
+            effectsCount = 30;
+        } else {
+            effectsCount = 28;
+        }
         for (int i = 0; i < effectsCount; i++) {
             injectRemoveEntityEffect(session, runtimeId, i);
         }
@@ -302,8 +313,13 @@ public class PlayerRewriteUtils {
             return;
         }
         SetScorePacket packet = new SetScorePacket();
-        packet.setAction(SetScorePacket.Action.REMOVE);
-        packet.getInfos().addAll(scoreInfos.values());
+        packet.setAction(SetScorePacket.Action.REMOVE); // For backwards compatibility
+        for (ScoreInfo info : scoreInfos.values()) {
+            // Since 26.40 the ScorerType.INVALID is used for REMOVE action
+            packet.getInfos().add(new ScoreInfo(info.getScoreboardId(),
+                info.getObjectiveId(),
+                info.getScore()));
+        }
         session.sendPacket(packet);
     }
 
