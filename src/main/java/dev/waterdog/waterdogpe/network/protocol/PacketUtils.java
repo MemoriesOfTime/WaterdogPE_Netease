@@ -19,8 +19,15 @@ import org.cloudburstmc.protocol.bedrock.packet.PlayerListPacket;
 
 public class PacketUtils {
 
+  /**
+   * Returns the effective action for a {@link PlayerListPacket} entry.
+   * <p>
+   * Older protocol versions carried an optional per-entry action that could override the packet-level
+   * action; current versions only keep the action on the packet itself. Both callers (EntityMap,
+   * EntityTracker) only need the packet-level action, which this now returns directly.
+   */
   public static PlayerListPacket.Action getAction(PlayerListPacket packet, PlayerListPacket.Entry entry) {
-    return entry.getAction() != null ? entry.getAction() : packet.getAction();
+    return packet.getAction();
   }
 
 }

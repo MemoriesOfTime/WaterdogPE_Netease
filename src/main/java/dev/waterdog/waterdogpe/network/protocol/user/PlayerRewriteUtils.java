@@ -254,11 +254,10 @@ public class PlayerRewriteUtils {
             return;
         }
         PlayerListPacket packet = new PlayerListPacket();
-        packet.setAction(PlayerListPacket.Action.REMOVE); // For backwards compatibility
+        packet.setAction(PlayerListPacket.Action.REMOVE);
         List<PlayerListPacket.Entry> entries = new ArrayList<>();
         for (UUID uuid : playerList) {
             var entry = new PlayerListPacket.Entry(uuid);
-            entry.setAction(PlayerListPacket.Action.REMOVE);
             entries.add(entry);
         }
         packet.getEntries().addAll(entries);
