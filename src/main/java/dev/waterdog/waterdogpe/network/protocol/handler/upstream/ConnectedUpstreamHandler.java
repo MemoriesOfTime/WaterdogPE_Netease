@@ -29,6 +29,7 @@ import dev.waterdog.waterdogpe.network.protocol.rewrite.RewriteMaps;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import lombok.Setter;
 import org.cloudburstmc.protocol.bedrock.data.PlayerActionType;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequest;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.common.PacketSignal;
@@ -118,6 +119,16 @@ public class ConnectedUpstreamHandler extends AbstractUpstreamHandler implements
     public PacketSignal handle(ClientCacheBlobStatusPacket packet) {
         if (this.player.getProtocol().isBefore(ProtocolVersion.MINECRAFT_PE_1_18_30)) {
             this.player.getChunkBlobs().addAll(packet.getNaks());
+        }
+        return PacketSignal.UNHANDLED;
+    }
+
+    @Override
+    public PacketSignal handle(ItemStackRequestPacket packet) {
+        // Track pending request ids so the proxy can synthesize ERROR responses on server switch.
+        // The packet is otherwise passed through unchanged; we never block or rewrite inventory actions.
+        for (ItemStackRequest request : packet.getRequests()) {
+            this.player.getPendingItemStackRequestIds().add(request.getRequestId());
         }
         return PacketSignal.UNHANDLED;
     }

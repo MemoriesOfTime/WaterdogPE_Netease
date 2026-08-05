@@ -24,7 +24,9 @@ import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.nbt.NbtType;
 import org.cloudburstmc.nbt.NbtUtils;
 import org.cloudburstmc.protocol.bedrock.data.BlockPropertyData;
+import org.cloudburstmc.protocol.bedrock.data.definitions.BlockDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
+import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleBlockDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleItemDefinition;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemVersion;
 import org.cloudburstmc.protocol.common.SimpleDefinitionRegistry;
@@ -72,6 +74,14 @@ public class DefinitionAggregator {
 
     /** Unified block properties: block name -> BlockPropertyData */
     private final Map<String, BlockPropertyData> unifiedBlockProperties = new LinkedHashMap<>();
+
+    /**
+     * Unified block runtime id -> block name. Built alongside {@link #unifiedBlockProperties} so that
+     * the insertion-order index is stable (ids never shift once assigned). Only meaningful in
+     * sequential block-palette mode ({@code blockNetworkIdsHashed == false}); in hash mode the client
+     * derives ids itself and this map is not consulted for translation.
+     */
+    private final List<String> unifiedBlockOrder = new ArrayList<>();
 
     /** Unified entity identifiers: entity id string -> NbtMap entry */
     private final Map<String, NbtMap> unifiedEntityEntries = new LinkedHashMap<>();
@@ -183,6 +193,7 @@ public class DefinitionAggregator {
             BlockPropertyData existing = this.unifiedBlockProperties.get(bp.getName());
             if (existing == null) {
                 this.unifiedBlockProperties.put(bp.getName(), bp);
+                this.unifiedBlockOrder.add(bp.getName());
                 if (previous != null || this.serverSnapshots.size() > 1) {
                     discoveredNewBlocks = true;
                     log.debug("New block property discovered from server {}: {}", serverName, bp.getName());
@@ -263,6 +274,7 @@ public class DefinitionAggregator {
             String name = oldBp.getName();
             if (!newBlockNames.contains(name) && !isDefinitionUsedByAnyServer(name, false)) {
                 this.unifiedBlockProperties.remove(name);
+                this.unifiedBlockOrder.remove(name);
                 removed = true;
             }
         }
@@ -391,7 +403,9 @@ public class DefinitionAggregator {
 
     /**
      * Create a ServerIdMapping for a specific downstream server.
-     * Maps the server's item runtime IDs to unified runtime IDs.
+     * Maps the server's item and block runtime IDs to unified runtime IDs.
+     * Block ids are only translated in sequential palette mode (see {@link #registerBlockNetworkIdsHashed});
+     * in hash mode the block side of the mapping is identity.
      */
     public synchronized ServerIdMapping createMapping(String serverName) {
         ServerSnapshot snapshot = this.serverSnapshots.get(serverName);
@@ -401,7 +415,7 @@ public class DefinitionAggregator {
 
         Int2IntMap serverToUnified = new Int2IntOpenHashMap();
         Int2IntMap unifiedToServer = new Int2IntOpenHashMap();
-        boolean isIdentity = true;
+        boolean isItemIdentity = true;
 
         for (ItemDefinition serverDef : snapshot.itemDefinitions) {
             ItemDefinition unifiedDef = this.unifiedItems.get(serverDef.getIdentifier());
@@ -415,14 +429,48 @@ public class DefinitionAggregator {
             unifiedToServer.put(unifiedId, serverId);
 
             if (serverId != unifiedId) {
-                isIdentity = false;
+                isItemIdentity = false;
             }
         }
 
-        if (isIdentity) {
+        // Block runtime ids: in sequential mode the id is the palette position. Build the mapping
+        // only when this server runs in sequential mode; hash-mode servers get block identity.
+        Boolean hashed = this.serverBlockNetworkIdsHashed.get(serverName);
+        boolean blockHashed = hashed == null || hashed;
+        Int2IntMap blockServerToUnified = new Int2IntOpenHashMap();
+        Int2IntMap blockUnifiedToServer = new Int2IntOpenHashMap();
+        boolean isBlockIdentity = true;
+        if (!blockHashed && !this.unifiedBlockOrder.isEmpty()) {
+            // Index unified block names for O(1) lookup of the unified id.
+            Map<String, Integer> unifiedIndex = new HashMap<>(this.unifiedBlockOrder.size());
+            for (int i = 0; i < this.unifiedBlockOrder.size(); i++) {
+                unifiedIndex.put(this.unifiedBlockOrder.get(i), i);
+            }
+            int serverPos = 0;
+            for (BlockPropertyData bp : snapshot.blockProperties) {
+                Integer unifiedIdBoxed = unifiedIndex.get(bp.getName());
+                if (unifiedIdBoxed == null) {
+                    serverPos++;
+                    continue;
+                }
+                int unifiedId = unifiedIdBoxed;
+                blockServerToUnified.put(serverPos, unifiedId);
+                blockUnifiedToServer.put(unifiedId, serverPos);
+                if (serverPos != unifiedId) {
+                    isBlockIdentity = false;
+                }
+                serverPos++;
+            }
+        }
+
+        if (isItemIdentity && isBlockIdentity) {
             return ServerIdMapping.IDENTITY;
         }
-        return new ServerIdMapping(serverToUnified, unifiedToServer);
+        if (isBlockIdentity) {
+            // Item translation needed, block side identity.
+            return new ServerIdMapping(serverToUnified, unifiedToServer);
+        }
+        return new ServerIdMapping(serverToUnified, unifiedToServer, blockServerToUnified, blockUnifiedToServer);
     }
 
     /**
@@ -450,6 +498,42 @@ public class DefinitionAggregator {
         }
 
         return new TranslatingItemRegistry(translating);
+    }
+
+    /**
+     * Build a TranslatingBlockRegistry for a specific downstream server (sequential palette mode).
+     * Returns null if no block translation is needed (hash mode, identity mapping, or no blocks).
+     */
+    public synchronized TranslatingBlockRegistry buildTranslatingBlockRegistry(String serverName) {
+        ServerSnapshot snapshot = this.serverSnapshots.get(serverName);
+        if (snapshot == null || snapshot.blockProperties.isEmpty()) {
+            return null;
+        }
+        Boolean hashed = this.serverBlockNetworkIdsHashed.get(serverName);
+        if (hashed != null && hashed) {
+            // Hash mode: block ids are content-derived, no translation needed.
+            return null;
+        }
+
+        // Build unified BlockDefinition per unified runtime id (== position in unifiedBlockOrder).
+        Int2ObjectMap<BlockDefinition> unifiedDefs = new Int2ObjectOpenHashMap<>(this.unifiedBlockOrder.size());
+        for (int unifiedId = 0; unifiedId < this.unifiedBlockOrder.size(); unifiedId++) {
+            String name = this.unifiedBlockOrder.get(unifiedId);
+            BlockPropertyData bp = this.unifiedBlockProperties.get(name);
+            unifiedDefs.put(unifiedId, new SimpleBlockDefinition(name, unifiedId, bp.getProperties()));
+        }
+
+        // Server block runtime id == position in the server's own block list.
+        Int2ObjectMap<BlockDefinition> translating = new Int2ObjectOpenHashMap<>();
+        int serverPos = 0;
+        for (BlockPropertyData bp : snapshot.blockProperties) {
+            int unifiedId = this.unifiedBlockOrder.indexOf(bp.getName());
+            if (unifiedId >= 0) {
+                translating.put(serverPos, unifiedDefs.get(unifiedId));
+            }
+            serverPos++;
+        }
+        return translating.isEmpty() ? null : new TranslatingBlockRegistry(translating);
     }
 
     /**
@@ -539,6 +623,14 @@ public class DefinitionAggregator {
      */
     public synchronized List<BlockPropertyData> getUnifiedBlockProperties() {
         return new ArrayList<>(this.unifiedBlockProperties.values());
+    }
+
+    /**
+     * Get the unified block names in stable unified-runtimeId order (sequential mode).
+     * Index in the returned list == unified block runtime id.
+     */
+    public synchronized List<String> getUnifiedBlockOrder() {
+        return new ArrayList<>(this.unifiedBlockOrder);
     }
 
     /**

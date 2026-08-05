@@ -227,8 +227,11 @@ public class ProxyConfig extends YamlConfig {
     @Accessors(fluent = true)
     @Comments({
             "If enabled, the proxy will aggregate custom item, block, and entity definitions from all downstream servers.",
-            "Players receive a unified definition set on initial connect. Item runtime IDs are translated transparently.",
-            "This allows custom items/blocks from different servers to coexist without conflicts."
+            "Players receive a unified definition set on initial connect. Item and block runtime IDs are translated",
+            "transparently in both directions so custom items/blocks from different servers coexist without conflicts.",
+            "On server switch the proxy clears the client's inventory and answers any pending item-stack request with",
+            "an error so the next server can push a consistent inventory without the client soft-locking; expect a brief",
+            "inventory refresh flicker on each transfer."
     })
     private boolean enableRegistryAggregation = false;
 

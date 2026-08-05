@@ -25,6 +25,7 @@ import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
 import dev.waterdog.waterdogpe.network.protocol.registry.DefinitionAggregator;
 import dev.waterdog.waterdogpe.network.protocol.registry.FakeDefinitionRegistry;
 import dev.waterdog.waterdogpe.network.protocol.registry.ServerIdMapping;
+import dev.waterdog.waterdogpe.network.protocol.registry.TranslatingBlockRegistry;
 import dev.waterdog.waterdogpe.network.protocol.registry.TranslatingItemRegistry;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.RewriteMaps;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
@@ -45,6 +46,7 @@ import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.MaterialReducer
 import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.PotionMixData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.recipe.FurnaceRecipeData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.recipe.RecipeData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.response.ItemStackResponse;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.common.NamedDefinition;
@@ -293,6 +295,19 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
     }
 
     @Override
+    public PacketSignal handle(ItemStackResponsePacket packet) {
+        // A server response resolves the pending request ids; drop them so the pending set does not
+        // grow unbounded and so a later server switch only synthesizes ERROR for still-pending requests.
+        IntSet pending = this.player.getPendingItemStackRequestIds();
+        if (!pending.isEmpty()) {
+            for (ItemStackResponse response : packet.getEntries()) {
+                pending.remove(response.getRequestId());
+            }
+        }
+        return PacketSignal.UNHANDLED;
+    }
+
+    @Override
     public PacketSignal handle(InventoryContentPacket packet) {
         ServerIdMapping mapping = this.player.getRewriteData().getCurrentMapping();
         if (mapping == null || mapping.isIdentity()) {
@@ -429,7 +444,8 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
     }
 
     /**
-     * Creates a separate BedrockCodecHelper for the downstream connection with TranslatingItemRegistry.
+     * Creates a separate BedrockCodecHelper for the downstream connection with TranslatingItemRegistry
+     * (and TranslatingBlockRegistry when block runtime ids need translation in sequential palette mode).
      * Shared across InitialHandler and SwitchDownstreamHandler.
      */
     protected void setupDownstreamTranslatingRegistry(ServerIdMapping mapping, String serverName, DefinitionAggregator aggregator) {
@@ -447,7 +463,10 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         ProtocolVersion protocol = this.player.getProtocol();
         BedrockCodec codec = this.player.isNetEaseClient() ? protocol.getNetEaseCodec() : protocol.getCodec();
         BedrockCodecHelper downstreamHelper = codec.createHelper();
-        downstreamHelper.setBlockDefinitions(FakeDefinitionRegistry.createBlockRegistry());
+
+        // Block registry: in sequential mode, translate server block runtime ids to unified ids.
+        TranslatingBlockRegistry blockRegistry = aggregator.buildTranslatingBlockRegistry(serverName);
+        downstreamHelper.setBlockDefinitions(blockRegistry != null ? blockRegistry : FakeDefinitionRegistry.createBlockRegistry());
         downstreamHelper.setItemDefinitions(translatingRegistry);
 
         // Copy camera preset definitions if already set

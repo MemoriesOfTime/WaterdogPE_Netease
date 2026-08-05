@@ -32,6 +32,7 @@ import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityFlag;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityLinkData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerType;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.common.util.VarInts;
@@ -486,6 +487,68 @@ public class PlayerRewriteUtils {
         packet.setRuntimeEntityId(runtimeId);
         packet.getMetadata().setFlag(EntityFlag.SLEEPING, true);
         session.sendPacketImmediately(packet);
+    }
+
+    // Container ids matching the Bedrock client's inventory windows (see Geyser PlayerInventoryTranslator).
+    private static final int CONTAINER_ID_PLAYER_INVENTORY = 0;
+    private static final int CONTAINER_ID_OFFHAND = 119;
+    private static final int CONTAINER_ID_ARMOR = 120;
+    private static final int CONTAINER_ID_CRAFTING_GRID = 124;
+    private static final int INVENTORY_SIZE_PLAYER = 36;
+    private static final int INVENTORY_SIZE_ARMOR = 4;
+    private static final int INVENTORY_SIZE_OFFHAND = 1;
+    private static final int INVENTORY_SIZE_CRAFTING_GRID = 4;
+
+    /**
+     * Send an InventoryContentPacket to the client, replacing the contents of a container.
+     */
+    public static void injectInventoryContent(ProxiedConnection session, int containerId, List<ItemData> contents) {
+        if (session == null || !session.isConnected()) {
+            return;
+        }
+        InventoryContentPacket packet = new InventoryContentPacket();
+        packet.setContainerId(containerId);
+        packet.getContents().addAll(contents);
+        session.sendPacketImmediately(packet);
+    }
+
+    /**
+     * Send an InventorySlotPacket to the client, updating a single slot.
+     */
+    public static void injectInventorySlot(ProxiedConnection session, int containerId, int slot, ItemData item) {
+        if (session == null || !session.isConnected()) {
+            return;
+        }
+        InventorySlotPacket packet = new InventorySlotPacket();
+        packet.setContainerId(containerId);
+        packet.setSlot(slot);
+        packet.setItem(item);
+        session.sendPacketImmediately(packet);
+    }
+
+    /**
+     * Clear the client's player inventory, armor, offhand and crafting grid by sending all-AIR
+     * InventoryContentPackets. This wipes the client's stack-network-id table so that stale ids from
+     * the previous downstream server cannot mismatch the next server's requests. The new downstream
+     * server will push its own inventory contents (with its own netIds) once the player spawns,
+     * re-establishing a consistent state.
+     */
+    public static void injectClearInventory(ProxiedConnection session) {
+        if (session == null || !session.isConnected()) {
+            return;
+        }
+        injectInventoryContent(session, CONTAINER_ID_PLAYER_INVENTORY, airList(INVENTORY_SIZE_PLAYER));
+        injectInventoryContent(session, CONTAINER_ID_ARMOR, airList(INVENTORY_SIZE_ARMOR));
+        injectInventoryContent(session, CONTAINER_ID_OFFHAND, airList(INVENTORY_SIZE_OFFHAND));
+        injectInventoryContent(session, CONTAINER_ID_CRAFTING_GRID, airList(INVENTORY_SIZE_CRAFTING_GRID));
+    }
+
+    private static List<ItemData> airList(int size) {
+        List<ItemData> list = new ObjectArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            list.add(ItemData.AIR);
+        }
+        return list;
     }
 
     public static boolean checkForImmobileFlag(EntityDataMap dataMap) {

@@ -390,4 +390,79 @@ class DefinitionAggregatorTest {
     void testGetServerSnapshotReturnsNullForUnknown() {
         assertNull(aggregator.getServerSnapshot("nonexistent"));
     }
+
+    // --- Block runtime id aggregation (sequential palette mode) ---
+
+    @Test
+    void testUnifiedBlockOrderStableIndexIsUnifiedRuntimeId() {
+        aggregator.registerServer("server1", Collections.emptyList(),
+                List.of(new BlockPropertyData("custom:a", NbtMap.EMPTY),
+                        new BlockPropertyData("custom:b", NbtMap.EMPTY)));
+
+        List<String> order = aggregator.getUnifiedBlockOrder();
+        assertEquals(List.of("custom:a", "custom:b"), order);
+        // unified runtime id == position in the order list
+        assertEquals("custom:a", order.get(0));
+        assertEquals("custom:b", order.get(1));
+    }
+
+    @Test
+    void testBlockMappingIdentityInHashMode() {
+        // Hash mode: block ids are content-derived, no translation needed.
+        aggregator.registerServer("server1", Collections.emptyList(),
+                List.of(new BlockPropertyData("custom:a", NbtMap.EMPTY)));
+        aggregator.registerBlockNetworkIdsHashed("server1", true);
+
+        ServerIdMapping mapping = aggregator.createMapping("server1");
+        assertTrue(mapping.isBlockIdentity());
+        // buildTranslatingBlockRegistry returns null in hash mode (no translation needed)
+        assertNull(aggregator.buildTranslatingBlockRegistry("server1"));
+    }
+
+    @Test
+    void testBlockMappingNonIdentityInSequentialMode() {
+        // Two servers register custom blocks in different orders -> positions differ.
+        aggregator.registerServer("server1", Collections.emptyList(),
+                List.of(new BlockPropertyData("custom:a", NbtMap.EMPTY),
+                        new BlockPropertyData("custom:b", NbtMap.EMPTY)));
+        aggregator.registerBlockNetworkIdsHashed("server1", false);
+
+        aggregator.registerServer("server2", Collections.emptyList(),
+                List.of(new BlockPropertyData("custom:b", NbtMap.EMPTY),
+                        new BlockPropertyData("custom:a", NbtMap.EMPTY)));
+        aggregator.registerBlockNetworkIdsHashed("server2", false);
+
+        // Unified order: server1 registered first -> [custom:a=0, custom:b=1]
+        // server2's positions: custom:b at pos 0, custom:a at pos 1
+        // So server2 needs translation: pos0(b)->unified1, pos1(a)->unified0
+        ServerIdMapping mapping2 = aggregator.createMapping("server2");
+        assertFalse(mapping2.isBlockIdentity());
+        // server2 pos 0 (custom:b) -> unified id 1
+        assertEquals(1, mapping2.translateBlockId(0));
+        // server2 pos 1 (custom:a) -> unified id 0
+        assertEquals(0, mapping2.translateBlockId(1));
+        // reverse: unified 0 -> server2 pos 1, unified 1 -> server2 pos 0
+        assertEquals(1, mapping2.reverseTranslateBlockId(0));
+        assertEquals(0, mapping2.reverseTranslateBlockId(1));
+    }
+
+    @Test
+    void testBuildTranslatingBlockRegistrySequentialMode() {
+        aggregator.registerServer("server1", Collections.emptyList(),
+                List.of(new BlockPropertyData("custom:a", NbtMap.EMPTY),
+                        new BlockPropertyData("custom:b", NbtMap.EMPTY)));
+        aggregator.registerBlockNetworkIdsHashed("server1", false);
+
+        TranslatingBlockRegistry registry = aggregator.buildTranslatingBlockRegistry("server1");
+        // server1's positions match unified order, so it should still build a registry,
+        // but the ids are identity (pos 0 -> unified 0, pos 1 -> unified 1).
+        assertNotNull(registry);
+        assertEquals(0, registry.getDefinition(0).getRuntimeId());
+        assertEquals(1, registry.getDefinition(1).getRuntimeId());
+    }
+
+    @Test
+    void testBuildTranslatingBlockRegistryReturnsNullForUnknownServer() {
+        assertNull(aggregator.buildTranslatingBlockRegistry("nonexistent"));
+    }
 }

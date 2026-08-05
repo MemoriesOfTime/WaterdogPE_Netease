@@ -15,9 +15,12 @@
 
 package dev.waterdog.waterdogpe.network.protocol.registry;
 
+import org.cloudburstmc.protocol.bedrock.data.definitions.BlockDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
+import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleBlockDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleItemDefinition;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
+import org.cloudburstmc.protocol.common.NamedDefinition;
 import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventoryActionData;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
@@ -111,12 +114,47 @@ public class ReverseItemRewriter implements BedrockPacketHandler {
         }
 
         int serverId = this.mapping.reverseTranslateItemId(unifiedId);
-        if (serverId == unifiedId) {
+
+        // Block-runtime-id translation (sequential palette mode). Block-items (dirt, stone, planks, ...)
+        // carry a separate blockRuntimeId that must be remapped independently of the item runtimeId.
+        // Use a "changed" flag rather than a null sentinel, because the drop-to-AIR case itself maps to
+        // null (ItemData.AIR.getBlockDefinition() == null), which would be indistinguishable from "no change".
+        BlockDefinition blockDef = item.getBlockDefinition();
+        BlockDefinition newBlockDef = blockDef;
+        boolean blockChanged = false;
+        if (blockDef != null && blockDef != ItemData.AIR.getBlockDefinition()
+                && !this.mapping.isBlockIdentity()) {
+            int unifiedBlockId = blockDef.getRuntimeId();
+            if (!this.mapping.isKnownUnifiedBlock(unifiedBlockId)) {
+                // Block exclusive to another server; drop its block binding so the server does not receive
+                // a wrong blockRuntimeId. The item runtimeId still identifies the item.
+                newBlockDef = ItemData.AIR.getBlockDefinition();
+                blockChanged = true;
+            } else {
+                int serverBlockId = this.mapping.reverseTranslateBlockId(unifiedBlockId);
+                if (serverBlockId != unifiedBlockId) {
+                    newBlockDef = new SimpleBlockDefinition(
+                            blockDef instanceof NamedDefinition ? ((NamedDefinition) blockDef).getIdentifier() : "unknown",
+                            serverBlockId,
+                            blockDef instanceof SimpleBlockDefinition ? ((SimpleBlockDefinition) blockDef).getState() : null);
+                    blockChanged = true;
+                }
+            }
+        }
+
+        if (serverId == unifiedId && !blockChanged) {
             return null;
         }
 
-        ItemDefinition serverDef = new SimpleItemDefinition(
-                def.getIdentifier(), serverId, def.isComponentBased());
-        return item.toBuilder().definition(serverDef).build();
+        ItemData.Builder builder = item.toBuilder();
+        if (serverId != unifiedId) {
+            ItemDefinition serverDef = new SimpleItemDefinition(
+                    def.getIdentifier(), serverId, def.isComponentBased());
+            builder.definition(serverDef);
+        }
+        if (blockChanged) {
+            builder.blockDefinition(newBlockDef);
+        }
+        return builder.build();
     }
 }

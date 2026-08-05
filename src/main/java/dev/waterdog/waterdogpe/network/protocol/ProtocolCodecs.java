@@ -137,6 +137,10 @@ public class ProtocolCodecs {
         HANDLED_PACKETS.add(InventoryTransactionPacket.class);
         HANDLED_PACKETS.add(CraftingDataPacket.class);
         HANDLED_PACKETS.add(CreativeContentPacket.class);
+        // ItemStackRequestPacket must be intercepted to track pending request ids so the proxy can
+        // synthesize ERROR responses on server switch and prevent the client from soft-locking.
+        HANDLED_PACKETS.add(ItemStackRequestPacket.class);
+        HANDLED_PACKETS.add(ItemStackResponsePacket.class);
     }
 
     private static final List<ProtocolCodecUpdater> UPDATERS = new ObjectArrayList<>();

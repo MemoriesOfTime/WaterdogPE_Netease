@@ -132,6 +132,13 @@ public class ProxiedPlayer implements CommandSender {
     private volatile int inputLockData;
     @Getter
     private final Int2ObjectMap<ContainerType> openContainers = Int2ObjectMaps.synchronize(new Int2ObjectOpenHashMap<>()); // id -> type
+    /**
+     * Pending ItemStackRequest ids the client has sent but not yet received an ItemStackResponse for.
+     * Tracked so the proxy can synthesize ERROR responses on server switch, preventing the client
+     * from soft-locking while waiting for a response that will never arrive from the new server.
+     */
+    @Getter
+    private final IntSet pendingItemStackRequestIds = IntSets.synchronize(new IntOpenHashSet());
     private final Object2ObjectMap<String, Permission> permissions = new Object2ObjectOpenHashMap<>();
     private final Collection<ServerInfo> pendingServers = ObjectCollections.synchronize(new ObjectArrayList<>());
     private ClientConnection clientConnection;

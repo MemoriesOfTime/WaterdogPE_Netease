@@ -20,29 +20,52 @@ import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import lombok.Getter;
 
 /**
- * Stores the item runtime ID mapping between a specific downstream server and the unified registry.
+ * Stores the item and block runtime ID mappings between a specific downstream server and the unified registry.
+ * <p>
+ * Items and blocks live in two independent id spaces (resolved by {@code itemDefinitions} and
+ * {@code blockDefinitions} registries respectively), so each is mapped separately. A mapping may be
+ * identity for one space and non-identity for the other (e.g. sequential block palette but unified items).
+ * <p>
  * Instances are immutable and thread-safe after construction.
  */
 public class ServerIdMapping {
 
     /**
-     * Singleton for servers whose IDs are identical to the unified IDs.
+     * Singleton for servers whose item AND block IDs are identical to the unified IDs.
      */
-    public static final ServerIdMapping IDENTITY = new ServerIdMapping(new Int2IntOpenHashMap(), new Int2IntOpenHashMap(), true);
+    public static final ServerIdMapping IDENTITY = new ServerIdMapping(
+            new Int2IntOpenHashMap(), new Int2IntOpenHashMap(),
+            new Int2IntOpenHashMap(), new Int2IntOpenHashMap(),
+            true, true);
 
     private final Int2IntMap itemServerToUnified;
     private final Int2IntMap itemUnifiedToServer;
+    private final Int2IntMap blockServerToUnified;
+    private final Int2IntMap blockUnifiedToServer;
     @Getter
     private final boolean identity;
+    /** True when block runtime ids need no translation (hash mode, or no custom blocks). */
+    @Getter
+    private final boolean blockIdentity;
 
     public ServerIdMapping(Int2IntMap itemServerToUnified, Int2IntMap itemUnifiedToServer) {
-        this(itemServerToUnified, itemUnifiedToServer, false);
+        this(itemServerToUnified, itemUnifiedToServer, new Int2IntOpenHashMap(), new Int2IntOpenHashMap(), false, true);
     }
 
-    private ServerIdMapping(Int2IntMap itemServerToUnified, Int2IntMap itemUnifiedToServer, boolean identity) {
+    public ServerIdMapping(Int2IntMap itemServerToUnified, Int2IntMap itemUnifiedToServer,
+                           Int2IntMap blockServerToUnified, Int2IntMap blockUnifiedToServer) {
+        this(itemServerToUnified, itemUnifiedToServer, blockServerToUnified, blockUnifiedToServer, false, false);
+    }
+
+    private ServerIdMapping(Int2IntMap itemServerToUnified, Int2IntMap itemUnifiedToServer,
+                            Int2IntMap blockServerToUnified, Int2IntMap blockUnifiedToServer,
+                            boolean identity, boolean blockIdentity) {
         this.itemServerToUnified = itemServerToUnified;
         this.itemUnifiedToServer = itemUnifiedToServer;
+        this.blockServerToUnified = blockServerToUnified;
+        this.blockUnifiedToServer = blockUnifiedToServer;
         this.identity = identity;
+        this.blockIdentity = blockIdentity;
     }
 
     /**
@@ -68,5 +91,30 @@ public class ServerIdMapping {
     public boolean isKnownUnified(int unifiedItemId) {
         if (this.identity) return true;
         return this.itemUnifiedToServer.containsKey(unifiedItemId);
+    }
+
+    /**
+     * Translate a server block runtime ID to the unified ID.
+     * Returns the original ID if no mapping exists.
+     */
+    public int translateBlockId(int serverBlockId) {
+        return this.blockServerToUnified.getOrDefault(serverBlockId, serverBlockId);
+    }
+
+    /**
+     * Translate a unified block runtime ID back to the server's ID.
+     * Returns the original ID if no mapping exists.
+     */
+    public int reverseTranslateBlockId(int unifiedBlockId) {
+        return this.blockUnifiedToServer.getOrDefault(unifiedBlockId, unifiedBlockId);
+    }
+
+    /**
+     * Returns true if the given unified block runtime ID is known to this server's mapping.
+     * For identity/block-identity mapping, always returns true.
+     */
+    public boolean isKnownUnifiedBlock(int unifiedBlockId) {
+        if (this.identity || this.blockIdentity) return true;
+        return this.blockUnifiedToServer.containsKey(unifiedBlockId);
     }
 }

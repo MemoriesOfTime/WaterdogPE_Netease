@@ -33,6 +33,7 @@ import dev.waterdog.waterdogpe.utils.config.proxy.ProxyConfig;
 import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.IntSet;
 import it.unimi.dsi.fastutil.longs.Long2LongMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.LongSet;
@@ -44,6 +45,8 @@ import org.cloudburstmc.protocol.bedrock.data.HudElement;
 import org.cloudburstmc.protocol.bedrock.data.ScoreInfo;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerType;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.response.ItemStackResponse;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.response.ItemStackResponseStatus;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.bedrock.util.EncryptionUtils;
 import org.cloudburstmc.protocol.common.PacketSignal;
@@ -334,6 +337,39 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
         // ContainerClosePacket can not close the player's own inventory window. If the previous server left it
         // open the client gets stuck and refuses to open any inventory, so force it shut via the SLEEPING flag.
         injectForceCloseInventory(this.player.getConnection(), rewriteData.getEntityId());
+
+        // Registry aggregation: the client's stack-network-id (netId) table is scoped to the previous
+        // downstream server. The new server assigns fresh ids on its own counter, so any client-held
+        // netId from the old server would mismatch and be rejected. Resolve this by (1) answering every
+        // still-pending ItemStackRequest with ERROR so the client undoes its local preview and stops
+        // waiting, then (2) clearing the client's inventory so its netId table is empty. The new server
+        // will push a complete inventory refresh (with its own netIds) on spawn, re-establishing a
+        // consistent state. Only when aggregation is enabled — without it the proxy is transparent and
+        // the client's table already matches whichever server it talks to.
+        if (aggregator != null) {
+            IntSet pendingRequests = this.player.getPendingItemStackRequestIds();
+            // The upstream (client) event loop concurrently add()s ids via ConnectedUpstreamHandler,
+            // and fastutil's SynchronizedCollection only guards individual ops — its iterator() does
+            // NOT hold the lock — so iterating the live set is a data race. Snapshot + clear under
+            // the set's own monitor (SynchronizedCollection locks on `this`), then build and send the
+            // response outside the lock so client-thread add()s are not blocked on network I/O.
+            int[] snapshot = null;
+            synchronized (pendingRequests) {
+                if (!pendingRequests.isEmpty()) {
+                    snapshot = pendingRequests.toIntArray();
+                    pendingRequests.clear();
+                }
+            }
+            if (snapshot != null && snapshot.length > 0) {
+                ItemStackResponsePacket responsePacket = new ItemStackResponsePacket();
+                for (int requestId : snapshot) {
+                    responsePacket.getEntries().add(new ItemStackResponse(
+                            ItemStackResponseStatus.ERROR, requestId, Collections.emptyList()));
+                }
+                this.player.getConnection().sendPacketImmediately(responsePacket);
+            }
+            injectClearInventory(this.player.getConnection());
+        }
 
         injectRemoveAllEffects(this.player.getConnection(), rewriteData.getEntityId(), this.player.getProtocol());
         injectClearWeather(this.player.getConnection());
