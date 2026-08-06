@@ -16,6 +16,7 @@
 package dev.waterdog.waterdogpe;
 
 import dev.mot.protocol.extension.packet.NetEaseContainerOpenPacket;
+import dev.mot.protocol.extension.packet.NetEasePlayerListPacket;
 import dev.mot.protocol.extension.packet.NetEaseTextPacket;
 import dev.waterdog.waterdogpe.command.*;
 import dev.waterdog.waterdogpe.command.utils.CommandUtils;
@@ -254,6 +255,7 @@ public class ProxyServer {
             // connection. Those ids must stay UnknownPacket passthrough.
             ProtocolCodecs.addHandledPacket(NetEaseTextPacket.class);
             ProtocolCodecs.addHandledPacket(NetEaseContainerOpenPacket.class);
+            ProtocolCodecs.addHandledPacket(NetEasePlayerListPacket.class);
 
             for (ProtocolVersion version : ProtocolVersion.values()) {
                 version.setBedrockCodec(ProtocolCodecs.buildCodec(version.getDefaultCodec()));
