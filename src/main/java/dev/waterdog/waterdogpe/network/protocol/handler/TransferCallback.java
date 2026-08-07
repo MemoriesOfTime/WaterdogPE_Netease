@@ -23,8 +23,8 @@ import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.network.protocol.handler.downstream.ConnectedDownstreamHandler;
 import dev.waterdog.waterdogpe.network.protocol.handler.upstream.ConnectedUpstreamHandler;
-import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
+import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import dev.waterdog.waterdogpe.scheduler.TaskHandler;
 import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
@@ -32,8 +32,8 @@ import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.packet.SetLocalPlayerAsInitializedPacket;
 import org.cloudburstmc.protocol.bedrock.packet.StopSoundPacket;
 
-import static dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils.*;
 import static dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback.TransferPhase.*;
+import static dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils.*;
 
 public class TransferCallback {
 
@@ -59,6 +59,10 @@ public class TransferCallback {
     private volatile TransferPhase transferPhase = PHASE_1;
     private volatile boolean finalized = false;
     private volatile boolean hasPlayStatus = false;
+    // Set once onTransferPhase1Completed injects the immobile flag + input lock so that every exit
+    // path (success, failure, timeout) can release them symmetrically and never leaves the client
+    // frozen/unable to move after a transfer failure. Reset is owned solely by releaseTransferFreeze.
+    private volatile boolean freezeInjected = false;
     private volatile TaskHandler<?> timeoutTask;
 
     public TransferCallback(ProxiedPlayer player, ClientConnection connection, ServerInfo sourceServer, int targetDimension) {
@@ -93,6 +97,7 @@ public class TransferCallback {
         TransferPhase phase = this.transferPhase;
         this.transferPhase = RESET;
         this.finalized = true;
+        this.releaseTransferFreeze();
         this.player.getRewriteData().clearTransferCallback(this);
 
         this.player.getLogger().warning("[" + this.player.getName() + "] Transfer to " + this.targetServer.getServerName()
@@ -127,6 +132,9 @@ public class TransferCallback {
         if (this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_19_50)) {
             injectInputLocks(this.player.getConnection(), INPUT_LOCK_FREEZE, fakePosition);
         }
+        // Remember we froze the client so every subsequent exit releases the freeze symmetrically;
+        // without this a phase-2 failure leaves the player locked in place and unable to move.
+        this.freezeInjected = true;
 
         if (rewriteData.getDimension() != this.targetDimension) {
             injectPosition(this.player.getConnection(), fakePosition, rewriteData.getRotation(), rewriteData.getEntityId());
@@ -160,12 +168,7 @@ public class TransferCallback {
 
         injectPosition(this.player.getConnection(), rewriteData.getSpawnPosition(), rewriteData.getRotation(), rewriteData.getEntityId());
 
-        if (!rewriteData.hasImmobileFlag()) {
-            injectEntityImmobile(this.player.getConnection(), rewriteData.getEntityId(), false);
-        }
-        if (this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_19_50)) {
-            injectInputLocks(this.player.getConnection(), this.player.getInputLockData(), rewriteData.getSpawnPosition());
-        }
+        this.releaseTransferFreeze();
         this.connection.setPacketHandler(new ConnectedDownstreamHandler(player, this.connection));
 
         // RESET before the event so handlers may start a new transfer right away.
@@ -204,6 +207,26 @@ public class TransferCallback {
         tryTransferFinalize();
     }
 
+    /**
+     * Idempotently releases the immobile flag and input lock injected by {@link #onTransferPhase1Completed}.
+     * Called from the success path, and crucially from every failure path so a transfer that dies after
+     * phase 1 never leaves the client frozen and unable to move. Guards on {@code freezeInjected} so it is
+     * a safe no-op when phase 1 never ran (StartGame-time failures) or when it already released the freeze.
+     */
+    private void releaseTransferFreeze() {
+        if (!this.freezeInjected) {
+            return;
+        }
+        this.freezeInjected = false;
+        RewriteData rewriteData = this.player.getRewriteData();
+        if (!rewriteData.hasImmobileFlag()) {
+            injectEntityImmobile(this.player.getConnection(), rewriteData.getEntityId(), false);
+        }
+        if (this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_19_50)) {
+            injectInputLocks(this.player.getConnection(), this.player.getInputLockData(), rewriteData.getSpawnPosition());
+        }
+    }
+
     public synchronized void onTransferFailed(String reason) {
         if (this.transferPhase == RESET) {
             return; // already completed or failed
@@ -213,6 +236,7 @@ public class TransferCallback {
         this.transferPhase = RESET;
         this.finalized = true; // a late PLAYER_SPAWN must not finalize a failed transfer
         this.cancelTimeout();
+        this.releaseTransferFreeze();
         this.player.getRewriteData().clearTransferCallback(this);
         this.player.getConnection().discardTransferQueue();
 

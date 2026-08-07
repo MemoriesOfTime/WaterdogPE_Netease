@@ -16,6 +16,9 @@
 package dev.waterdog.waterdogpe.network.protocol.rewrite;
 
 import dev.waterdog.waterdogpe.network.protocol.PacketUtils;
+import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
+import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
+import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import it.unimi.dsi.fastutil.longs.LongListIterator;
 import org.cloudburstmc.protocol.bedrock.data.camera.CameraAttachToEntityInstruction;
 import org.cloudburstmc.protocol.bedrock.data.debugshape.DebugShape;
@@ -24,9 +27,6 @@ import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataType;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityLinkData;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
-import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
-import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import org.cloudburstmc.protocol.common.PacketSignal;
 
 import java.util.Arrays;
@@ -133,7 +133,7 @@ public class EntityMap implements BedrockPacketHandler {
             long from = PlayerRewriteUtils.rewriteId(entityLink.getFrom(), this.data.getEntityId(), this.data.getOriginalEntityId());
             long to = PlayerRewriteUtils.rewriteId(entityLink.getTo(), this.data.getEntityId(), this.data.getOriginalEntityId());
             if (entityLink.getFrom() != from || entityLink.getTo() != to) {
-                iterator.set(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated()));
+                iterator.set(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated(), entityLink.getVehicleAngularVelocity()));
                 signal2 = PacketSignal.HANDLED;
             }
         }
@@ -156,7 +156,7 @@ public class EntityMap implements BedrockPacketHandler {
             long from = PlayerRewriteUtils.rewriteId(entityLink.getFrom(), this.data.getEntityId(), this.data.getOriginalEntityId());
             long to = PlayerRewriteUtils.rewriteId(entityLink.getTo(), this.data.getEntityId(), this.data.getOriginalEntityId());
             if (entityLink.getFrom() != from || entityLink.getTo() != to) {
-                iterator.set(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated()));
+                iterator.set(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated(), entityLink.getVehicleAngularVelocity()));
                 signal2 = PacketSignal.HANDLED;
             }
         }
@@ -225,7 +225,7 @@ public class EntityMap implements BedrockPacketHandler {
         long to = PlayerRewriteUtils.rewriteId(entityLink.getTo(), this.data.getEntityId(), this.data.getOriginalEntityId());
 
         if (from != entityLink.getFrom() || to != entityLink.getTo()) {
-            packet.setEntityLink(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated()));
+            packet.setEntityLink(new EntityLinkData(from, to, entityLink.getType(), entityLink.isImmediate(), entityLink.isRiderInitiated(), entityLink.getVehicleAngularVelocity()));
             return PacketSignal.HANDLED;
         }
         return PacketSignal.UNHANDLED;

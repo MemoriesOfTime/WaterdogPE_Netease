@@ -233,7 +233,7 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
                     command.getFlags(),
                     command.getPermission(),
                     new CommandEnumData(command.getName() + "_aliases", aliases, false),
-                    Collections.emptyList(),
+                    command.getSubcommands(),
                     command.getOverloads()));
         }
         return PacketSignal.HANDLED;
@@ -440,7 +440,9 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         for (CameraPreset preset : presets) {
             registry.add(new SimpleNamedDefinition(preset.getIdentifier(), id++));
         }
-        codecHelper.setCameraPresetDefinitions(registry.build());
+        var builtRegistry = registry.build();
+        codecHelper.setCameraPresetDefinitions(builtRegistry);
+        this.connection.getCodecHelper().setCameraPresetDefinitions(builtRegistry);
     }
 
     /**

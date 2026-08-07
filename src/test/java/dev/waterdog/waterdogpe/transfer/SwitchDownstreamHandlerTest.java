@@ -19,6 +19,7 @@ import dev.waterdog.waterdogpe.event.defaults.ServerTransferEvent;
 import dev.waterdog.waterdogpe.event.defaults.ServerTransferFailedEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
+import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
 import dev.waterdog.waterdogpe.network.protocol.handler.downstream.SwitchDownstreamHandler;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.StartGameSettings;
@@ -28,17 +29,15 @@ import org.cloudburstmc.protocol.bedrock.data.AuthoritativeMovementMode;
 import org.cloudburstmc.protocol.bedrock.data.GameType;
 import org.cloudburstmc.protocol.bedrock.packet.DisconnectPacket;
 import org.cloudburstmc.protocol.bedrock.packet.StartGamePacket;
+import org.cloudburstmc.protocol.bedrock.packet.TransferPacket;
+import org.cloudburstmc.protocol.common.PacketSignal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 public class SwitchDownstreamHandlerTest {
 
@@ -184,5 +183,69 @@ public class SwitchDownstreamHandlerTest {
         ServerTransferFailedEvent event = this.harness.events(ServerTransferFailedEvent.class).get(0);
         assertSame(ReconnectReason.SERVER_KICK, event.getReason());
         assertTrue(event.isRecoverable());
+    }
+
+    private static TransferPacket transferTo(String address) {
+        TransferPacket packet = new TransferPacket();
+        packet.setAddress(address);
+        packet.setPort(19132);
+        return packet;
+    }
+
+    /**
+     * The regression this guards: between StartGame claiming the new connection as the player's
+     * active downstream and TransferCallback finishing phase 2, only SwitchDownstreamHandler is
+     * installed. A forwarded TransferPacket would make the client dial the target directly and
+     * leave the proxy for good.
+     */
+    @Test
+    void interceptsTransferPacketWhileTransferIsInProgress() {
+        when(this.harness.config.useFastTransfer()).thenReturn(true);
+        ServerInfoFixture third = newFixture("third");
+        when(this.harness.proxy.getServerInfo("third.example.com")).thenReturn(third.info());
+
+        this.handler.handle(newStartGame());
+        assertNotNull(this.harness.player.getRewriteData().getTransferCallback(), "transfer must be in flight");
+
+        PacketSignal signal = this.handler.handle(transferTo("third.example.com"));
+
+        assertSame(Signals.CANCEL, signal, "a TransferPacket must never reach the client");
+        verify(third.info(), never()).createConnection(any());
+    }
+
+    @Test
+    void interceptsTransferPacketBeforeStartGame() {
+        when(this.harness.config.useFastTransfer()).thenReturn(true);
+        ServerInfoFixture third = newFixture("third");
+        when(this.harness.proxy.getServerInfo("third.example.com")).thenReturn(third.info());
+        this.harness.stubDial(third.info());
+
+        PacketSignal signal = this.handler.handle(transferTo("third.example.com"));
+
+        assertSame(Signals.CANCEL, signal);
+        verify(third.info()).createConnection(this.harness.player);
+    }
+
+    @Test
+    void forwardsTransferPacketForUnknownServer() {
+        when(this.harness.config.useFastTransfer()).thenReturn(true);
+
+        PacketSignal signal = this.handler.handle(transferTo("unknown.example.com"));
+
+        assertSame(PacketSignal.UNHANDLED, signal, "an address outside the downstream list stays a native transfer");
+    }
+
+    @Test
+    void ignoresTransferPacketFromStaleConnection() {
+        when(this.harness.config.useFastTransfer()).thenReturn(true);
+        ServerInfoFixture stale = newFixture("stale");
+        ServerInfoFixture third = newFixture("third");
+        when(this.harness.proxy.getServerInfo("third.example.com")).thenReturn(third.info());
+        SwitchDownstreamHandler staleHandler = new SwitchDownstreamHandler(this.harness.player, stale.connection());
+
+        PacketSignal signal = staleHandler.handle(transferTo("third.example.com"));
+
+        assertSame(Signals.CANCEL, signal);
+        verify(third.info(), never()).createConnection(any());
     }
 }

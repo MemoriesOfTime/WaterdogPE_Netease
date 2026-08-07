@@ -15,12 +15,12 @@
 
 package dev.waterdog.waterdogpe.network.protocol.rewrite;
 import dev.waterdog.waterdogpe.network.protocol.PacketUtils;
+import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
+import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import org.cloudburstmc.protocol.bedrock.data.HudVisibility;
 import org.cloudburstmc.protocol.bedrock.data.ScoreInfo;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityLinkData;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
-import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import org.cloudburstmc.protocol.common.PacketSignal;
 
 import java.util.List;

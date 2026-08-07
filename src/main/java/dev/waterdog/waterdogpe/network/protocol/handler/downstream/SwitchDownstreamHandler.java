@@ -16,6 +16,7 @@
 package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 
 import com.nimbusds.jwt.SignedJWT;
+import dev.waterdog.waterdogpe.event.defaults.PostTransferCompleteEvent;
 import dev.waterdog.waterdogpe.event.defaults.ServerTransferEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;

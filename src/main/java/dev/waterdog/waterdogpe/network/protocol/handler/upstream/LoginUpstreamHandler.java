@@ -133,7 +133,7 @@ public class LoginUpstreamHandler implements BedrockPacketHandler {
         PlayStatusPacket status = new PlayStatusPacket();
         status.setStatus(event.getStatus());
         this.session.sendPacketImmediately(status);
-        this.session.disconnect(event.getDisconnectMessage());
+        this.session.disconnect(event.getDisconnectMessage().toString());
         this.proxy.getLogger().warning("[{}] <-> Upstream has disconnected due to incompatible protocol (protocol={})", this.session.getSocketAddress(), protocolVersion);
         return null;
     }
