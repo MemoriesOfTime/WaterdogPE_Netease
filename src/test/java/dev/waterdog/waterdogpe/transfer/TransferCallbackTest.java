@@ -21,6 +21,9 @@ import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
 import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
+import org.cloudburstmc.math.vector.Vector2f;
+import org.cloudburstmc.math.vector.Vector3f;
+import org.cloudburstmc.protocol.bedrock.packet.MovePlayerPacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetLocalPlayerAsInitializedPacket;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.isA;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -52,6 +56,10 @@ public class TransferCallbackTest {
         this.sourceServer = this.harness.newServer("lobby");
         this.targetServer = this.harness.newServer("game");
         this.targetConnection = this.harness.newDownstream(this.targetServer);
+        // tryTransferFinalize re-anchors the player to the spawn position, so populate the fields a real
+        // StartGamePacket would have set, otherwise the NPE hides behind missing fixture data.
+        this.harness.player.getRewriteData().setSpawnPosition(Vector3f.from(0, 64, 0));
+        this.harness.player.getRewriteData().setRotation(Vector2f.ZERO);
         this.callback = new TransferCallback(this.harness.player, this.targetConnection, this.sourceServer, 0);
         assertTrue(this.harness.player.getRewriteData().trySetTransferCallback(this.callback));
     }
@@ -125,6 +133,19 @@ public class TransferCallbackTest {
 
         verify(this.targetConnection).sendPacket(isA(SetLocalPlayerAsInitializedPacket.class));
         assertEquals(1, this.harness.events(PostTransferCompleteEvent.class).size());
+    }
+
+    /**
+     * Once the downstream confirms spawn, finalize re-anchors the player to the spawn position so any
+     * residual settling from the freeze release is corrected against the now-loaded collision surface
+     * instead of air. This is the guard against players sinking into the ground after a transfer.
+     */
+    @Test
+    void finalizeReinjectsSpawnPosition() {
+        setPhase(TransferCallback.TransferPhase.RESET);
+        this.callback.onPlayStatus();
+
+        verify(this.harness.upstream, atLeastOnce()).sendPacketImmediately(isA(MovePlayerPacket.class));
     }
 
     @Test

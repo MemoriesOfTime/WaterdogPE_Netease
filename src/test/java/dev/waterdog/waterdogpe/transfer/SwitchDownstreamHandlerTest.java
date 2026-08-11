@@ -28,8 +28,10 @@ import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.data.AuthoritativeMovementMode;
 import org.cloudburstmc.protocol.bedrock.data.GameType;
 import org.cloudburstmc.protocol.bedrock.packet.DisconnectPacket;
+import org.cloudburstmc.protocol.bedrock.packet.SetEntityDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.StartGamePacket;
 import org.cloudburstmc.protocol.bedrock.packet.TransferPacket;
+import org.cloudburstmc.protocol.bedrock.packet.UpdateClientInputLocksPacket;
 import org.cloudburstmc.protocol.common.PacketSignal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +39,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.Mockito.*;
 
 public class SwitchDownstreamHandlerTest {
@@ -247,5 +250,41 @@ public class SwitchDownstreamHandlerTest {
 
         assertSame(Signals.CANCEL, signal);
         verify(third.info(), never()).createConnection(any());
+    }
+
+    /**
+     * Same-dimension transfers route through the fake-position path (fastTransfer), where the client is
+     * moved onto injected empty chunks. The client must be frozen BEFORE that move so gravity does not
+     * drop it through the air chunks during the first dimension-change window.
+     */
+    @Test
+    void freezesClientBeforeMovingOntoFakeChunksForSameDimensionTransfer() {
+        // dimension defaults to 0 and StartGame uses 0, so determineDimensionId(0,0) = 1 != 0 -> fastTransfer
+        this.handler.handle(newStartGame());
+
+        TransferCallback callback = this.harness.player.getRewriteData().getTransferCallback();
+        assertNotNull(callback, "transfer slot should be claimed");
+        assertEquals(Boolean.TRUE, TransferTestHarness.getField(callback, "freezeInjected"),
+                "freeze must be marked injected at StartGame so failure paths release it");
+
+        verify(this.harness.upstream, atLeastOnce()).sendPacketImmediately(isA(SetEntityDataPacket.class));
+        verify(this.harness.upstream, atLeastOnce()).sendPacket(isA(UpdateClientInputLocksPacket.class));
+    }
+
+    /**
+     * Real cross-dimension transfers skip the fake-position path and drive the callback synchronously,
+     * so there is no phase 1 window to protect and the freeze must not be injected early.
+     */
+    @Test
+    void doesNotFreezeClientEarlyForRealCrossDimensionTransfer() {
+        StartGamePacket packet = newStartGame();
+        packet.setDimensionId(1); // 0 -> 1 is a real dimension change, not fastTransfer
+        this.handler.handle(packet);
+
+        TransferCallback callback = this.harness.player.getRewriteData().getTransferCallback();
+        assertNotNull(callback, "transfer slot should be claimed");
+        assertEquals(Boolean.FALSE, TransferTestHarness.getField(callback, "freezeInjected"),
+                "cross-dimension transfer must not inject the early freeze");
+        verify(this.harness.upstream, never()).sendPacket(isA(UpdateClientInputLocksPacket.class));
     }
 }

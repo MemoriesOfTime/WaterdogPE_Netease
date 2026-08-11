@@ -287,6 +287,17 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
         boolean fastTransfer = event.isTransferScreenAllowed() && newDimension != packet.getDimensionId();
         if (fastTransfer) {
             Vector3f fakePosition = packet.getPlayerPosition().add(2000, 0, 2000);
+            // Freeze the client BEFORE moving it onto the fake empty chunks. Gravity is active the moment the
+            // client processes the MovePlayer, and until phase 1 completed the client had no immobile/input
+            // lock to hold it in place, so it fell through the air chunks into the void. Freezing here keeps
+            // the whole first dimension change window safe; releaseTransferFreeze still releases it
+            // symmetrically on success, failure and timeout via freezeInjected.
+            injectEntityImmobile(this.player.getConnection(), rewriteData.getEntityId(), true);
+            if (this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_19_50)) {
+                injectInputLocks(this.player.getConnection(), INPUT_LOCK_FREEZE, fakePosition);
+            }
+            transferCallback.markFreezeInjected();
+
             injectPosition(this.player.getConnection(), fakePosition, packet.getRotation(), rewriteData.getEntityId());
             this.player.getConnection().setTransferQueueActive(true);
             injectDimensionChange(this.player.getConnection(), newDimension, fakePosition,

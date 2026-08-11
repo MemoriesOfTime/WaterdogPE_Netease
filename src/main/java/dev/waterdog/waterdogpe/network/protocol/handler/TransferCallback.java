@@ -59,9 +59,10 @@ public class TransferCallback {
     private volatile TransferPhase transferPhase = PHASE_1;
     private volatile boolean finalized = false;
     private volatile boolean hasPlayStatus = false;
-    // Set once onTransferPhase1Completed injects the immobile flag + input lock so that every exit
-    // path (success, failure, timeout) can release them symmetrically and never leaves the client
-    // frozen/unable to move after a transfer failure. Reset is owned solely by releaseTransferFreeze.
+    // Set when the fast-transfer path injects the immobile flag + input lock (see markFreezeInjected),
+    // so that every exit path (success, failure, timeout) can release them symmetrically via
+    // releaseTransferFreeze and never leaves the client frozen/unable to move after a transfer failure.
+    // Reset is owned solely by releaseTransferFreeze.
     private volatile boolean freezeInjected = false;
     private volatile TaskHandler<?> timeoutTask;
 
@@ -126,16 +127,11 @@ public class TransferCallback {
 
     private void onTransferPhase1Completed() {
         RewriteData rewriteData = this.player.getRewriteData();
-        injectEntityImmobile(this.player.getConnection(), rewriteData.getEntityId(), true);
+        // The freeze is injected at StartGame time (see markFreezeInjected) so the client cannot fall
+        // through the fake empty chunks while we wait for the first DIMENSION_CHANGE_SUCCESS. Keep it
+        // active through the second dim change for the same reason.
 
         Vector3f fakePosition = rewriteData.getSpawnPosition().add(-2000, 0, -2000);
-        if (this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_19_50)) {
-            injectInputLocks(this.player.getConnection(), INPUT_LOCK_FREEZE, fakePosition);
-        }
-        // Remember we froze the client so every subsequent exit releases the freeze symmetrically;
-        // without this a phase-2 failure leaves the player locked in place and unable to move.
-        this.freezeInjected = true;
-
         if (rewriteData.getDimension() != this.targetDimension) {
             injectPosition(this.player.getConnection(), fakePosition, rewriteData.getRotation(), rewriteData.getEntityId());
             rewriteData.setDimension(determineDimensionId(rewriteData.getDimension(), this.targetDimension));
@@ -149,6 +145,17 @@ public class TransferCallback {
         }
         this.player.getConnection().setTransferQueueActive(false);
         this.transferPhase = PHASE_2;
+    }
+
+    /**
+     * Marks the client as frozen so that every exit path releases the freeze symmetrically. Called by
+     * {@link dev.waterdog.waterdogpe.network.protocol.handler.downstream.SwitchDownstreamHandler} on the
+     * fake-position transfer path (same-dimension transfers), where the client is moved onto injected empty
+     * chunks and would otherwise fall through them during the first dimension change window. The freeze is
+     * released on every exit (success, failure, timeout) via {@link #releaseTransferFreeze()}.
+     */
+    public void markFreezeInjected() {
+        this.freezeInjected = true;
     }
 
     private void onTransferPhase2Completed() {
@@ -198,6 +205,13 @@ public class TransferCallback {
         initializedPacket.setRuntimeEntityId(this.player.getRewriteData().getOriginalEntityId());
         this.connection.sendPacket(initializedPacket);
 
+        // Re-anchor the player to the spawn position after the downstream confirmed spawn. By now the real
+        // chunks for the spawn column have arrived, so any residual settling from the freeze release is
+        // corrected against a loaded collision surface instead of air, which is what caused players to sink
+        // into the ground after a transfer.
+        RewriteData rewriteData = this.player.getRewriteData();
+        injectPosition(this.player.getConnection(), rewriteData.getSpawnPosition(), rewriteData.getRotation(), rewriteData.getEntityId());
+
         PostTransferCompleteEvent event = new PostTransferCompleteEvent(this.connection, this.player);
         this.player.getProxy().getEventManager().callEvent(event);
     }
@@ -208,10 +222,11 @@ public class TransferCallback {
     }
 
     /**
-     * Idempotently releases the immobile flag and input lock injected by {@link #onTransferPhase1Completed}.
-     * Called from the success path, and crucially from every failure path so a transfer that dies after
-     * phase 1 never leaves the client frozen and unable to move. Guards on {@code freezeInjected} so it is
-     * a safe no-op when phase 1 never ran (StartGame-time failures) or when it already released the freeze.
+     * Idempotently releases the immobile flag and input lock injected at StartGame time (see
+     * {@link #markFreezeInjected()}). Called from the success path, and crucially from every failure path
+     * so a transfer that dies after StartGame never leaves the client frozen and unable to move. Guards on
+     * {@code freezeInjected} so it is a safe no-op when the freeze was never injected (StartGame-time
+     * failures before the claim, or non-fast-transfer paths) or when it already released the freeze.
      */
     private void releaseTransferFreeze() {
         if (!this.freezeInjected) {
