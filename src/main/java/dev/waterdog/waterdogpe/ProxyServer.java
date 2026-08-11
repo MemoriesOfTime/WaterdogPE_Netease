@@ -55,6 +55,7 @@ import dev.waterdog.waterdogpe.utils.reporting.ErrorReporting;
 import dev.waterdog.waterdogpe.utils.types.TextContainer;
 import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
 import io.netty.channel.EventLoopGroup;
+import io.netty.util.internal.EmptyArrays;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import lombok.Getter;
 import lombok.Setter;
@@ -429,27 +430,22 @@ public class ProxyServer {
         }
 
         String[] args = message.split(" ");
-        if (args.length < 1) {
-            return false;
-        }
-
-        Command command = this.getCommandMap().getCommand(args[0]);
-        if (command == null) {
-            return false;
-        }
+        Command command = this.commandMap.getCommand(args[0]);
 
         String[] shiftedArgs;
-        if (command.getSettings().isQuoteAware()) { // Quote aware parsing
+        if (command != null && command.getSettings().isQuoteAware()) { // Quote aware parsing
             List<String> arguments = CommandUtils.parseArguments(message);
             arguments.remove(0);
             shiftedArgs = arguments.toArray(String[]::new);
         } else {
-            shiftedArgs = args.length > 1 ? Arrays.copyOfRange(args, 1, args.length) : new String[0];
+            shiftedArgs = args.length > 1 ? Arrays.copyOfRange(args, 1, args.length) : EmptyArrays.EMPTY_STRINGS;
         }
-
-        DispatchCommandEvent event = new DispatchCommandEvent(sender, args[0], shiftedArgs);
+        DispatchCommandEvent event = new DispatchCommandEvent(sender, args[0], shiftedArgs, command);
         this.eventManager.callEvent(event);
-        return !event.isCancelled() && this.commandMap.handleCommand(sender, args[0], shiftedArgs);
+
+        // Canceling only skips the execution, the consume state decides if downstream still sees the command
+        boolean consumed = !event.isCancelled() && this.commandMap.handleCommand(sender, command, args[0], shiftedArgs);
+        return event.isConsumed(consumed);
     }
 
     public boolean isRunning() {

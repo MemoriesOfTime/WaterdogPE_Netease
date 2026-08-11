@@ -53,6 +53,7 @@ public class ProxiedServerSessionInitializer extends ProxiedSessionInitializer<B
         if (metrics instanceof RakChannelMetrics rakMetrics) {
             channel.config().setOption(RakChannelOption.RAK_METRICS, rakMetrics);
         }
+        channel.config().setOption(RakChannelOption.RAK_AUTO_FLUSH, false);
 
         boolean netEaseSupport = this.proxy.getConfiguration().isNeteaseClientSupport();
         int rakVersion = channel.config().getOption(RakChannelOption.RAK_PROTOCOL_VERSION);

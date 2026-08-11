@@ -1,7 +1,7 @@
 [versions]
 raklib = "1.1.0.CR1-20260606.034627-2"
-bedrock-codec = "3.0.0.Beta13-SNAPSHOT"
-bedrock-connection = "3.0.0.Beta13-SNAPSHOT"
+bedrock-codec = "3.0.0.Beta13-20260810.172341-14"
+bedrock-connection = "3.0.0.Beta13-20260810.172341-14"
 netease-protocol-extension = "1.21.124-R3"
 log4j = "2.25.4"
 jline = "3.30.6"
