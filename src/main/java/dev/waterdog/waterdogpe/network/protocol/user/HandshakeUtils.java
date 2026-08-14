@@ -170,16 +170,15 @@ public class HandshakeUtils {
             displayName = identityData.displayName;
         }
 
-        if (xboxAuth) {
-            ProxyConfig config = ProxyServer.getInstance().getConfiguration();
-            if (config.useLoginExtras()) {
-                clientData.addProperty("Waterdog_Auth", true);
-                clientData.addProperty("Waterdog_XUID", identityData.xuid);
-                if (identityData.minecraftId != null) {
-                    clientData.addProperty("Waterdog_MID", identityData.minecraftId);
-                }
-            }
-        }
+        ProxyConfig config = ProxyServer.getInstance().getConfiguration();
+        applyLoginExtras(
+                clientData,
+                config.useLoginExtras(),
+                xboxAuth,
+                identityData.xuid,
+                identityData.minecraftId,
+                ((InetSocketAddress) session.getSocketAddress()).getAddress().getHostAddress()
+        );
         // Before 1.26.20, client sends CertificateChainPayload in LoginPacket instead of TokenPayload
         // We are trying to replicate that behavior.
         boolean shouldSendCertificateChain = packet.getAuthPayload() instanceof CertificateChainPayload ||
@@ -221,13 +220,37 @@ public class HandshakeUtils {
 
     public static JsonObject parseClientData(JWSObject clientJwt, String xuid, BedrockSession session) {
         JsonObject clientData = (JsonObject) JsonParser.parseString(clientJwt.getPayload().toString());
-        ProxyConfig config = ProxyServer.getInstance().getConfiguration();
-        if (config.useLoginExtras()) {
-            // Add waterdog attributes
-            clientData.addProperty("Waterdog_XUID", xuid);
-            clientData.addProperty("Waterdog_IP", ((InetSocketAddress) session.getSocketAddress()).getAddress().getHostAddress());
-        }
+        clearLoginExtras(clientData);
         return clientData;
+    }
+
+    static void applyLoginExtras(JsonObject clientData, boolean enabled, boolean authenticated,
+                                 String xuid, String minecraftId, String address) {
+        clearLoginExtras(clientData);
+        if (!enabled) {
+            return;
+        }
+        if (address != null && !address.isBlank()) {
+            clientData.addProperty("Waterdog_IP", address);
+        }
+        if (!authenticated) {
+            return;
+        }
+        clientData.addProperty("Waterdog_Auth", true);
+        if (xuid != null) {
+            clientData.addProperty("Waterdog_XUID", xuid);
+        }
+        if (minecraftId != null) {
+            clientData.addProperty("Waterdog_MID", minecraftId);
+        }
+    }
+
+    private static void clearLoginExtras(JsonObject clientData) {
+        // These fields are proxy-owned trust claims and must never survive from client-controlled JWT data.
+        clientData.remove("Waterdog_Auth");
+        clientData.remove("Waterdog_XUID");
+        clientData.remove("Waterdog_MID");
+        clientData.remove("Waterdog_IP");
     }
 
     public static void processEncryption(BedrockSession session, PublicKey key) throws Exception {

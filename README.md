@@ -21,6 +21,8 @@ If you want to discuss things without joining the discord server, please use the
 If you haven't used WaterdogPE before, we recommend you to take a look at our [setup guide](https://docs.waterdog.dev/waterdogpe-setup/starting-waterdog) in the docs.   
 *Please note that the config from the old Waterdog (Bungee) is not compatible with WaterdogPE*
 
+When `use_login_extras` is enabled, client-supplied `Waterdog_*` fields are removed before forwarding. The proxy forwards `Waterdog_Auth` and `Waterdog_XUID` only after the upstream login chain is verified; unverified NetEase test clients receive only the forwarded address and must remain unverified downstream.
+
 ### Supported Software
 Our goal is to support all commonly used Minecraft: Bedrock server softwares. Spoons and unofficial forks will not be supported due to the lack
 of proper implementation.  

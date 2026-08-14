@@ -117,7 +117,10 @@ public class ProxyConfig extends YamlConfig {
 
     @Path("use_login_extras")
     @Accessors(fluent = true)
-    @Comment("If enabled, the proxy will pass information like XUID or IP to the downstream server using custom fields in the LoginPacket")
+    @Comments({
+            "If enabled, the proxy passes the client IP and authenticated identity fields to downstream servers.",
+            "Waterdog_XUID and Waterdog_Auth are included only when the upstream login chain is verified."
+    })
     private boolean useLoginExtras = false;
 
     @Path("replace_username_spaces")
