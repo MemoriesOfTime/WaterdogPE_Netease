@@ -29,6 +29,7 @@ import lombok.ToString;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
 import org.cloudburstmc.protocol.bedrock.codec.v2168.Bedrock_v2168;
 import org.cloudburstmc.protocol.bedrock.codec.v2168.Bedrock_v2168_hotfix4;
+import org.cloudburstmc.protocol.bedrock.codec.v2169.Bedrock_v2169;
 import org.cloudburstmc.protocol.bedrock.codec.v1001.Bedrock_v1001;
 import org.cloudburstmc.protocol.bedrock.codec.v313.Bedrock_v313;
 import org.cloudburstmc.protocol.bedrock.codec.v332.Bedrock_v332;
@@ -122,7 +123,7 @@ public enum ProtocolVersion {
     MINECRAFT_PE_1_19_40(557, Bedrock_v557.CODEC, "1.19.40", "1.19.41"),
     MINECRAFT_PE_1_19_50(560, Bedrock_v560.CODEC, "1.19.50", "1.19.51"),
     MINECRAFT_PE_1_19_60(567, Bedrock_v567.CODEC, "1.19.60"),
-    MINECRAFT_PE_1_19_62(567, 568, Bedrock_v568.CODEC, "1.19.62"), // this version has not bumped protocol number on client side
+    MINECRAFT_PE_1_19_62(567, 1, Bedrock_v568.CODEC, "1.19.62"), // this version has not bumped protocol number on client side
     MINECRAFT_PE_1_19_63(568, Bedrock_v568.CODEC, "1.19.63"),
     MINECRAFT_PE_1_19_70(575, Bedrock_v575.CODEC, "1.19.70", "1.19.71"),
     MINECRAFT_PE_1_19_80(582, Bedrock_v582.CODEC, "1.19.80", "1.19.81", "1.19.83"),
@@ -146,7 +147,7 @@ public enum ProtocolVersion {
     MINECRAFT_PE_1_21_90(818, Bedrock_v818.CODEC, "1.21.90", "1.21.91", "1.21.92"),
     MINECRAFT_PE_1_21_93(819, Bedrock_v819.CODEC, Bedrock_v819_NetEase.CODEC, "1.21.93", "1.21.94"),
     MINECRAFT_PE_1_21_100(827, Bedrock_v827.CODEC, "1.21.100", "1.21.101"),
-    MINECRAFT_PE_1_21_110(843, 844, Bedrock_v844.CODEC, "1.21.110"),
+    MINECRAFT_PE_1_21_110(843, Bedrock_v844.CODEC, "1.21.110"),
     MINECRAFT_PE_1_21_111(844, Bedrock_v844.CODEC, "1.21.111", "1.21.112", "1.21.113", "1.21.114"),
     MINECRAFT_PE_1_21_120(859, Bedrock_v859.CODEC, "1.21.120", "1.21.121", "1.21.123"),
     MINECRAFT_PE_1_21_124(860, Bedrock_v860.CODEC, Bedrock_v860_NetEase.CODEC, "1.21.124"),
@@ -156,7 +157,8 @@ public enum ProtocolVersion {
     MINECRAFT_PE_1_26_20(975, Bedrock_v975.CODEC, "26.20", "26.21", "26.22", "26.23"),
     MINECRAFT_PE_1_26_30(1001, Bedrock_v1001.CODEC, "26.30", "26.31", "26.32"),
     MINECRAFT_PE_1_26_40(2168, Bedrock_v2168.CODEC, "26.40", "26.41", "26.42", "26.43"),
-    MINECRAFT_PE_1_26_44(2168, 2169, Bedrock_v2168_hotfix4.CODEC, "26.44"), // this version has not bumped protocol number on client side
+    MINECRAFT_PE_1_26_44(2168, 1, Bedrock_v2168_hotfix4.CODEC, "26.44"), // this version has not bumped protocol number on client side
+    MINECRAFT_PE_1_26_45(2169, Bedrock_v2169.CODEC, "26.45"),
     ;
 
     private static final ProtocolVersion[] VALUES = values();
@@ -171,7 +173,6 @@ public enum ProtocolVersion {
     private final int protocol;
     @Getter
     private final int protocolInternal;
-
     @Getter
     private final BedrockCodec defaultCodec;
     @Getter
@@ -184,20 +185,20 @@ public enum ProtocolVersion {
     private final ObjectImmutableList<String> displayNames;
 
     ProtocolVersion(int protocol, BedrockCodec codec, String... displayNames) {
-        this(protocol, protocol, codec, null, displayNames);
+        this(protocol, 0, codec, null, displayNames);
     }
 
     ProtocolVersion(int protocol, BedrockCodec codec, BedrockCodec netEaseCodec, String... displayNames) {
-        this(protocol, protocol, codec, netEaseCodec, displayNames);
+        this(protocol, 0, codec, netEaseCodec, displayNames);
     }
 
-    ProtocolVersion(int protocol, int protocolInternal, BedrockCodec codec, String... displayNames) {
-        this(protocol, protocolInternal, codec, null, displayNames);
+    ProtocolVersion(int protocol, int internalPatch, BedrockCodec codec, String... displayNames) {
+        this(protocol, internalPatch, codec, null, displayNames);
     }
 
-    ProtocolVersion(int protocol, int protocolInternal, BedrockCodec codec, BedrockCodec netEaseCodec, String... displayNames) {
+    ProtocolVersion(int protocol, int internalPatch, BedrockCodec codec, BedrockCodec netEaseCodec, String... displayNames) {
         this.protocol = protocol;
-        this.protocolInternal = protocolInternal;
+        this.protocolInternal = (protocol << 2) | (internalPatch & 0x3);
         this.defaultCodec = codec;
         this.defaultNetEaseCodec = netEaseCodec;
         this.displayNames = new ObjectImmutableList<>(displayNames);
