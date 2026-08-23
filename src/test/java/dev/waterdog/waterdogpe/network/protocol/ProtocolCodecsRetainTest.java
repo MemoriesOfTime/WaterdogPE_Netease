@@ -18,6 +18,7 @@ package dev.waterdog.waterdogpe.network.protocol;
 import dev.mot.protocol.extension.codec.v686.Bedrock_v686_NetEase;
 import dev.mot.protocol.extension.packet.*;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
+import org.cloudburstmc.protocol.bedrock.packet.ScriptMessagePacket;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -67,6 +68,8 @@ public class ProtocolCodecsRetainTest {
         BedrockCodec built = ProtocolCodecs.buildCodec(Bedrock_v686_NetEase.CODEC);
         assertNotNull(built.getPacketDefinition(TextPacket.class),
                 "TextPacket is in HANDLED_PACKETS and must always survive buildCodec");
+        assertNotNull(built.getPacketDefinition(ScriptMessagePacket.class),
+                "ScriptMessagePacket is constructed by PlayerLatencyBroadcaster and must survive buildCodec");
     }
 
     /**

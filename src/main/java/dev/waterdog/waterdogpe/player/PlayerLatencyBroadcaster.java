@@ -86,9 +86,9 @@ public final class PlayerLatencyBroadcaster {
         // is present — formal ViaProxy setups without that secret would otherwise never
         // receive a snapshot and keep showing TAB "X".
         final String payload = encodeSnapshot(online);
-        final ScriptMessagePacket packet = createPacket(payload);
         for (ProxiedPlayer recipient : online) {
-            recipient.sendPacket(packet);
+            // Each session encodes independently; sharing one packet instance is unsafe.
+            recipient.sendPacket(createPacket(payload));
         }
     }
 
