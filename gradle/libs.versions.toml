@@ -5,12 +5,13 @@ bedrock-connection = "3.0.0.Beta13-20260820.124150-16"
 netease-protocol-extension = "1.21.124-R3"
 log4j = "2.25.4"
 jline = "3.30.6"
-netty = "4.1.135.Final"
+netty = "4.2.16.Final"
 lombok = "1.18.30"
 
 [libraries]
-# Pin all Netty artifacts to a single version via BOM; the MOT RakNet fork pins core netty to an
-# older version, which would otherwise mix with the version below.
+# Pin all Netty artifacts to a single version via BOM; keep it aligned with the version the MOT
+# RakNet fork builds against (it switched to Netty 4.2), which would otherwise mix with transitive
+# 4.1.x versions from the protocol libs.
 netty-bom = { module = "io.netty:netty-bom", version.ref = "netty" }
 bugsnag = { module = "com.bugsnag:bugsnag", version = "[3.0,4.0)" }
 bstats-base = { module = "org.bstats:bstats-base", version = "3.0.1" }
