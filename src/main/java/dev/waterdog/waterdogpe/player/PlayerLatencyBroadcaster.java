@@ -29,7 +29,7 @@ import java.util.UUID;
 
 /**
  * Broadcasts each connected player's RakNet ping to Java Edition clients on the
- * same downstream. ViaBedrock consumes {@code easecation:player_latency_v1} and
+ * same downstream. ViaBedrock consumes {@code waterdog:player_latency_v1} and
  * writes those values into Java {@code PLAYER_INFO_UPDATE}, which is the only
  * place Java TAB can show another Bedrock player's latency. Vanilla
  * {@code PlayerListPacket} has no ping field, so without this snapshot Java
@@ -37,7 +37,7 @@ import java.util.UUID;
  */
 public final class PlayerLatencyBroadcaster {
 
-    public static final String MESSAGE_ID = "easecation:player_latency_v1";
+    public static final String MESSAGE_ID = "waterdog:player_latency_v1";
     static final int MAX_ENTRIES = 4_096;
 
     private PlayerLatencyBroadcaster() {

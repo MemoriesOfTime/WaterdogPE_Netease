@@ -229,7 +229,7 @@ public class ProxyConfig extends YamlConfig {
     @Path("broadcast_player_latency")
     @Comments({
             "Broadcast each player's RakNet ping to Java Edition clients (ViaProxy / ViaBedrock)",
-            "as easecation:player_latency_v1 ScriptMessages. Vanilla PlayerListPacket has no ping",
+            "as waterdog:player_latency_v1 ScriptMessages. Vanilla PlayerListPacket has no ping",
             "field, so Java TAB otherwise shows unknown latency (\"X\") for Bedrock players."
     })
     private boolean broadcastPlayerLatency = true;

@@ -52,8 +52,9 @@ class PlayerLatencyBroadcasterTest {
     }
 
     @Test
-    void packetUsesViaBedrockMessageId() {
+    void packetUsesNeutralWaterdogMessageId() {
         final ScriptMessagePacket packet = PlayerLatencyBroadcaster.createPacket("{\"" + BEDROCK + "\":42}");
+        assertEquals("waterdog:player_latency_v1", packet.getChannel());
         assertEquals(PlayerLatencyBroadcaster.MESSAGE_ID, packet.getChannel());
         assertTrue(packet.getMessage().contains(BEDROCK.toString()));
     }
