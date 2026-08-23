@@ -40,6 +40,7 @@ import dev.waterdog.waterdogpe.network.protocol.updaters.CodecUpdaterCommands;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfoMap;
 import dev.waterdog.waterdogpe.packs.PackManager;
+import dev.waterdog.waterdogpe.player.PlayerLatencyBroadcaster;
 import dev.waterdog.waterdogpe.player.PlayerManager;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import dev.waterdog.waterdogpe.plugin.PluginManager;
@@ -314,8 +315,18 @@ public class ProxyServer {
         ProxiedSessionInitializer.ZLIB_STRATEGY.getDefaultCompression().setLevel(this.getConfiguration().getUpstreamCompression());
         // TODO: support downstream compression level too
 
+        this.schedulePlayerLatencyBroadcast();
+
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
         this.tickFuture = this.tickExecutor.scheduleAtFixedRate(this::tickProcessor, 50, 50, TimeUnit.MILLISECONDS);
+    }
+
+    private void schedulePlayerLatencyBroadcast() {
+        int intervalTicks = this.getConfiguration().getPlayerLatencyIntervalTicks();
+        if (intervalTicks < 1) {
+            intervalTicks = 20;
+        }
+        this.scheduler.scheduleDelayedRepeating(() -> PlayerLatencyBroadcaster.tick(this), 1, intervalTicks);
     }
 
     private void bootNetworks(InetSocketAddress address) throws NetworkStartupException {

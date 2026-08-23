@@ -141,6 +141,8 @@ public class ProtocolCodecs {
         HANDLED_PACKETS.add(SubChunkPacket.class);
         HANDLED_PACKETS.add(ChunkRadiusUpdatedPacket.class);
         HANDLED_PACKETS.add(DebugDrawerPacket.class);
+        // Constructed by PlayerLatencyBroadcaster for ViaBedrock Java TAB ping.
+        HANDLED_PACKETS.add(ScriptMessagePacket.class);
     }
 
     private static final List<ProtocolCodecUpdater> UPDATERS = new ObjectArrayList<>();

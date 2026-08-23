@@ -226,6 +226,18 @@ public class ProxyConfig extends YamlConfig {
     @Comment("Maximum size in bytes for decompressed packet data. Default is 50MB (52428800). Increase if you encounter decompression errors with large packets.")
     private int maxDecompressedBytes = 52428800;
 
+    @Path("broadcast_player_latency")
+    @Comments({
+            "Broadcast each player's RakNet ping to Java Edition clients (ViaProxy / ViaBedrock)",
+            "as easecation:player_latency_v1 ScriptMessages. Vanilla PlayerListPacket has no ping",
+            "field, so Java TAB otherwise shows unknown latency (\"X\") for Bedrock players."
+    })
+    private boolean broadcastPlayerLatency = true;
+
+    @Path("player_latency_interval_ticks")
+    @Comment("How often to broadcast the player latency snapshot. 20 ticks = 1 second.")
+    private int playerLatencyIntervalTicks = 20;
+
     public ProxyConfig(File file) {
         this.CONFIG_HEADER = new String[]{"Waterdog Main Configuration file", "Configure your desired network settings here."};
         this.CONFIG_FILE = file;
