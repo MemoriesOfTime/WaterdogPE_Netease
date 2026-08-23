@@ -25,6 +25,7 @@ import dev.waterdog.waterdogpe.event.EventManager;
 import dev.waterdog.waterdogpe.event.defaults.DispatchCommandEvent;
 import dev.waterdog.waterdogpe.event.defaults.NetworkRegisterEvent;
 import dev.waterdog.waterdogpe.event.defaults.ProxyStartEvent;
+import dev.waterdog.waterdogpe.event.defaults.TransferCompleteEvent;
 import dev.waterdog.waterdogpe.logger.MainLogger;
 import dev.waterdog.waterdogpe.network.*;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.CompressionType;
@@ -327,6 +328,9 @@ public class ProxyServer {
             intervalTicks = 20;
         }
         this.scheduler.scheduleDelayedRepeating(() -> PlayerLatencyBroadcaster.tick(this), 1, intervalTicks);
+        // First join and server switch should not wait a full interval before Java TAB
+        // can see other Bedrock players' ping.
+        this.eventManager.subscribe(TransferCompleteEvent.class, event -> PlayerLatencyBroadcaster.tick(this));
     }
 
     private void bootNetworks(InetSocketAddress address) throws NetworkStartupException {
