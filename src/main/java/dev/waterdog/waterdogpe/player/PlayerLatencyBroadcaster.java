@@ -71,26 +71,24 @@ public final class PlayerLatencyBroadcaster {
         }
 
         final List<ProxiedPlayer> online = new ArrayList<>();
-        boolean hasJavaClient = false;
         for (ProxiedPlayer player : players) {
             if (player == null || !player.isConnected()) {
                 continue;
             }
             online.add(player);
-            hasJavaClient = hasJavaClient || player.isJavaClient();
         }
-        // Native Bedrock TAB does not need this snapshot. Skip the extra ScriptMessage
-        // unless a ViaProxy / Java client is on the same downstream.
-        if (online.isEmpty() || !hasJavaClient) {
+        if (online.isEmpty()) {
             return;
         }
 
+        // Always send to every player on this downstream. Native Bedrock clients ignore
+        // unknown ScriptMessages, and isJavaClient() is only true when ViaProxyAuthToken
+        // is present — formal ViaProxy setups without that secret would otherwise never
+        // receive a snapshot and keep showing TAB "X".
         final String payload = encodeSnapshot(online);
         final ScriptMessagePacket packet = createPacket(payload);
         for (ProxiedPlayer recipient : online) {
-            if (recipient.isJavaClient()) {
-                recipient.sendPacket(packet);
-            }
+            recipient.sendPacket(packet);
         }
     }
 
