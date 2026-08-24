@@ -1,5 +1,5 @@
 [versions]
-raklib = "1.1.0.CR1-20260822.064033-5"
+raklib = "1.1.0.CR1-20260823.150315-6"
 bedrock-codec = "3.0.0.Beta13-20260820.124150-16"
 bedrock-connection = "3.0.0.Beta13-20260820.124150-16"
 netease-protocol-extension = "1.21.124-R3"
