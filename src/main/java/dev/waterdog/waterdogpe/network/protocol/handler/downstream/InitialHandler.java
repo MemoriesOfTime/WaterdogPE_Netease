@@ -16,6 +16,7 @@
 package dev.waterdog.waterdogpe.network.protocol.handler.downstream;
 
 import com.nimbusds.jwt.SignedJWT;
+import dev.mot.protocol.extension.BedrockCryptoUtils;
 import dev.waterdog.waterdogpe.event.defaults.InitialServerConnectedEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
@@ -32,7 +33,6 @@ import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
 import org.cloudburstmc.protocol.bedrock.packet.*;
-import org.cloudburstmc.protocol.bedrock.util.EncryptionUtils;
 import org.cloudburstmc.protocol.common.PacketSignal;
 
 import javax.crypto.SecretKey;
@@ -71,8 +71,8 @@ public class InitialHandler extends AbstractDownstreamHandler {
         try {
             SignedJWT saltJwt = SignedJWT.parse(packet.getJwt());
             URI x5u = saltJwt.getHeader().getX509CertURL();
-            ECPublicKey serverKey = EncryptionUtils.parseKey(x5u.toASCIIString());
-            SecretKey key = EncryptionUtils.getSecretKey(
+            ECPublicKey serverKey = BedrockCryptoUtils.parseKey(x5u.toASCIIString());
+            SecretKey key = BedrockCryptoUtils.getSecretKey(
                     this.player.getLoginData().getKeyPair().getPrivate(),
                     serverKey,
                     Base64.getDecoder().decode(saltJwt.getJWTClaimsSet().getStringClaim("salt"))

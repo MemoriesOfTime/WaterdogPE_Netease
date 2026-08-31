@@ -15,6 +15,7 @@
 
 package dev.waterdog.waterdogpe.network.connection.client;
 
+import dev.mot.protocol.extension.BedrockCryptoUtils;
 import dev.waterdog.waterdogpe.network.connection.codec.batch.FrameIdCodec;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.CompressionType;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.ProxiedCompressionCodec;
@@ -49,7 +50,6 @@ import org.cloudburstmc.protocol.bedrock.netty.codec.encryption.BedrockEncryptio
 import org.cloudburstmc.protocol.bedrock.netty.codec.encryption.BedrockEncryptionEncoder;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
-import org.cloudburstmc.protocol.bedrock.util.EncryptionUtils;
 
 import javax.crypto.SecretKey;
 import java.net.SocketAddress;
@@ -219,9 +219,9 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
             boolean useCtr = protocolVersion >= Bedrock_v428.CODEC.getProtocolVersion();
 
             this.channel.pipeline().addAfter(FrameIdCodec.NAME, BedrockEncryptionEncoder.NAME,
-                    new BedrockEncryptionEncoder(secretKey, EncryptionUtils.createCipher(useCtr, true, secretKey)));
+                    new BedrockEncryptionEncoder(secretKey, BedrockCryptoUtils.createCipher(useCtr, true, secretKey)));
             this.channel.pipeline().addAfter(FrameIdCodec.NAME, BedrockEncryptionDecoder.NAME,
-                    new BedrockEncryptionDecoder(secretKey, EncryptionUtils.createCipher(useCtr, false, secretKey)));
+                    new BedrockEncryptionDecoder(secretKey, BedrockCryptoUtils.createCipher(useCtr, false, secretKey)));
 
             log.info("Encryption enabled for {}", this.getSocketAddress());
         });

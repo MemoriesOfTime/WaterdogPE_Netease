@@ -26,6 +26,7 @@ import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import dev.mot.protocol.extension.BedrockCryptoUtils;
 import dev.mot.protocol.extension.NetEaseEncryptionUtils;
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
@@ -152,7 +153,9 @@ public class HandshakeUtils {
         boolean xboxAuth = result.signed();
         ChainValidationResult.IdentityClaims identityClaims = result.identityClaims();
         ChainValidationResult.IdentityData identityData = identityClaims.extraData;
-        ECPublicKey identityPublicKey = (ECPublicKey) identityClaims.parsedIdentityPublicKey();
+        // Do NOT use identityClaims.parsedIdentityPublicKey() here: it delegates to
+        // EncryptionUtils.parseKey and would trigger its static Mojang endpoint fetch.
+        ECPublicKey identityPublicKey = BedrockCryptoUtils.parseKey(identityClaims.identityPublicKey);
         String xuid = identityData.xuid;
         UUID uuid = identityData.identity;
         String minecraftId = identityData.minecraftId;
@@ -254,11 +257,11 @@ public class HandshakeUtils {
     }
 
     public static void processEncryption(BedrockSession session, PublicKey key) throws Exception {
-        byte[] token = EncryptionUtils.generateRandomToken();
-        SecretKey encryptionKey = EncryptionUtils.getSecretKey(privateKeyPair.getPrivate(), key, token);
+        byte[] token = BedrockCryptoUtils.generateRandomToken();
+        SecretKey encryptionKey = BedrockCryptoUtils.getSecretKey(privateKeyPair.getPrivate(), key, token);
 
         ServerToClientHandshakePacket packet = new ServerToClientHandshakePacket();
-        packet.setJwt(EncryptionUtils.createHandshakeJwt(privateKeyPair, token));
+        packet.setJwt(BedrockCryptoUtils.createHandshakeJwt(privateKeyPair, token));
 
         session.getPeer().getChannel().eventLoop().execute(() -> {
             session.sendPacketImmediately(packet);
