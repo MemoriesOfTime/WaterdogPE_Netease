@@ -62,6 +62,8 @@ public class PlayerRewriteUtils {
     private static final ByteBuf fakeChunkDataNether;
     private static final ByteBuf fakeChunkDataEnd;
     private static final ByteBuf emptyChunkRaw;
+    // 16x16 zeroed height map (byte per column)
+    private static final ByteBuf emptyHeightMapData;
 
     static {
         defaultChunkRadius.setRadius(8);
@@ -76,6 +78,7 @@ public class PlayerRewriteUtils {
         fakeChunkDataNether = createChunkData(1, 8);
         fakeChunkDataEnd = createChunkData(1, 16);
         emptyChunkRaw = createChunkDataRaw();
+        emptyHeightMapData = Unpooled.directBuffer(256).writeZero(256).asReadOnly();
     }
 
     private static ByteBuf createChunkDataRaw() {
@@ -439,7 +442,7 @@ public class PlayerRewriteUtils {
      * requests triggered by our injected request-mode empty chunks, so the client finishes loading the
      * spawn column and sends DIMENSION_CHANGE_SUCCESS instead of waiting on the not-yet-wired new server.
      */
-    public static void injectAirSubChunkResponse(ProxiedConnection session, SubChunkRequestPacket request) {
+    public static void injectAirSubChunkResponse(ProxiedConnection session, SubChunkRequestPacket request, ProtocolVersion version) {
         if (session == null || !session.isConnected()) {
             return;
         }
@@ -451,15 +454,20 @@ public class PlayerRewriteUtils {
 
         List<Vector3i> offsets = request.getPositionOffsets();
         if (offsets.isEmpty()) {
-            offsets = List.of(Vector3i.ZERO); // pre-v485 clients request a single sub-chunk with no offsets
+            offsets = List.of(Vector3i.ZERO);
         }
         for (Vector3i offset : offsets) {
             SubChunkData data = new SubChunkData();
             data.setPosition(offset);
             data.setResult(SubChunkRequestResult.SUCCESS_ALL_AIR);
-            data.setData(Unpooled.EMPTY_BUFFER);
-            data.setHeightMapType(HeightMapDataType.NO_DATA);
-            data.setRenderHeightMapType(HeightMapDataType.NO_DATA); // serialized since v818
+            if (version.isBefore(ProtocolVersion.MINECRAFT_PE_1_26_40)) {
+                // older serializers write this unconditionally when cache is off
+                // but with v1.26.40, it causes the client to disconnect if data is sent
+                data.setData(Unpooled.EMPTY_BUFFER);
+            }
+            data.setHeightMapType(HeightMapDataType.HAS_DATA);
+            data.setRenderHeightMapType(HeightMapDataType.COPIED);
+            data.setHeightMapData(emptyHeightMapData.retainedSlice());
             packet.getSubChunks().add(data);
         }
         session.sendPacketImmediately(packet);

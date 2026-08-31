@@ -79,7 +79,7 @@ public class ConnectedUpstreamHandler extends AbstractUpstreamHandler implements
         if (callback == null || callback.getPhase() != TransferCallback.TransferPhase.PHASE_1) {
             return PacketSignal.UNHANDLED;
         }
-        injectAirSubChunkResponse(this.player.getConnection(), packet);
+        injectAirSubChunkResponse(this.player.getConnection(), packet, this.player.getProtocol());
         return Signals.CANCEL;
     }
 
