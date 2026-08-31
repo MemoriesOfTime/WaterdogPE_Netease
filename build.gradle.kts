@@ -33,14 +33,12 @@ java {
 }
 
 repositories {
-    mavenLocal() // locally built protocol/raknet snapshots take priority, like with Maven
     mavenCentral()
     maven("https://repo.opencollab.dev/maven-releases/")
     maven("https://repo.opencollab.dev/maven-snapshots/")
     maven("https://central.sonatype.com/repository/maven-snapshots/")
     maven("https://repo.waterdog.dev/main")
-    maven("https://repo.mot.dev/repository/maven-snapshots/")
-    maven("https://repo.mot.dev/repository/maven-releases/")
+    maven("https://repo.mot.dev/repository/maven-public/")
 }
 
 dependencies {

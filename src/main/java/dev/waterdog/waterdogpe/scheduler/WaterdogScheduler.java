@@ -140,7 +140,11 @@ public class WaterdogScheduler {
             return;
         }
 
-        this.taskHandlerMap.remove(taskHandler.getTaskId()).cancel();
+        // Hot-reload (cancelTasksByClassLoader) or a plugin thread may have removed it already.
+        TaskHandler<?> removed = this.taskHandlerMap.remove(taskHandler.getTaskId());
+        if (removed != null) {
+            removed.cancel();
+        }
     }
 
     public void shutdown() {
@@ -170,13 +174,13 @@ public class WaterdogScheduler {
      */
     public int cancelTasksByClassLoader(ClassLoader loader) {
         int cancelled = 0;
-        for (Map.Entry<Integer, TaskHandler<?>> entry : new java.util.ArrayList<>(this.taskHandlerMap.entrySet())) {
+        for (Map.Entry<Integer, TaskHandler<?>> entry : this.taskHandlerMap.entrySet()) {
             TaskHandler<?> handler = entry.getValue();
             Runnable task = handler.getTask();
             ClassLoader taskLoader = task == null ? null : task.getClass().getClassLoader();
             if (taskLoader != null && taskLoader == loader) {
                 handler.cancel();
-                this.taskHandlerMap.remove(entry.getKey());
+                this.taskHandlerMap.remove(entry.getKey(), handler);
                 cancelled++;
             }
         }

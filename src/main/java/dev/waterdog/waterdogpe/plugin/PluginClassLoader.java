@@ -15,12 +15,11 @@
 
 package dev.waterdog.waterdogpe.plugin;
 
-import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
-
 import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Simple class loader which holds classes of plugins.
@@ -29,7 +28,14 @@ import java.net.URLClassLoader;
 public class PluginClassLoader extends URLClassLoader {
 
     private final PluginManager pluginManager;
-    private final Object2ObjectOpenHashMap<String, Class<?>> classes = new Object2ObjectOpenHashMap<>();
+    // Deliberately no lock on findClass. This loader is not parallel-capable, so loadClass()
+    // already serializes every name on the loader instance monitor; the only concurrent entry
+    // is getClassFromCache() calling findClass(name, false) directly from network threads.
+    // Any findClass-level lock - on this or a shared object - deadlocks loaders A<->B when
+    // findClass(name, true) traverses getClassFromCache() into the other loader's locked
+    // findClass(name, false) (see PluginClassLoaderConcurrentResolveTest). The remaining
+    // duplicate-define race is recovered in the LinkageError handler below.
+    private final ConcurrentHashMap<String, Class<?>> classes = new ConcurrentHashMap<>();
 
     public PluginClassLoader(PluginManager pluginManager, ClassLoader parent, File file) throws MalformedURLException {
         super(new URL[]{file.toURI().toURL()}, parent);
@@ -53,13 +59,36 @@ public class PluginClassLoader extends URLClassLoader {
 
         if (checkGlobal) {
             result = this.pluginManager.getClassFromCache(name);
+            if (result != null) {
+                this.classes.put(name, result);
+                return result;
+            }
         }
 
-        if (result == null && (result = super.findClass(name)) != null) {
-            this.pluginManager.cacheClass(name, result);
+        try {
+            result = super.findClass(name);
+        } catch (LinkageError e) {
+            // Lost a race into super.findClass() for the same name: the JVM rejects the
+            // second definition with a LinkageError, so adopt the winner's class.
+            // findLoadedClass() sees the winner as soon as its defineClass() returns, before
+            // it is published to this.classes - probing only the map would miss that window
+            // and rethrow a spurious LinkageError.
+            Class<?> winner = this.findLoadedClass(name);
+            if (winner == null) {
+                winner = this.classes.get(name);
+            }
+            if (winner != null) {
+                this.classes.putIfAbsent(name, winner);
+                return winner;
+            }
+            if (checkGlobal) {
+                throw e; // loadClass() path: surface the real definition error
+            }
+            throw new ClassNotFoundException(name, e); // probe path: report a plain miss
         }
-        this.classes.put(name, result);
-        return result;
+        this.pluginManager.cacheClass(name, result);
+        Class<?> existing = this.classes.putIfAbsent(name, result);
+        return existing != null ? existing : result;
     }
 
 }

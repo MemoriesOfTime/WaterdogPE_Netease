@@ -19,8 +19,12 @@ import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.logger.MainLogger;
 import dev.waterdog.waterdogpe.utils.exceptions.EventException;
 
-import java.util.*;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -34,7 +38,9 @@ public class EventHandler {
     private final EventManager eventManager;
     private final Class<? extends Event> eventClass;
 
-    private final Map<EventPriority, ArrayList<Consumer<Event>>> priority2handlers = new EnumMap<>(EventPriority.class);
+    // Fired (read) from network threads while subscribe/unsubscribe (write) run on plugin or
+    // tick threads - CopyOnWriteArrayList keeps the hot fire path lock-free.
+    private final ConcurrentMap<EventPriority, CopyOnWriteArrayList<Consumer<Event>>> priority2handlers = new ConcurrentHashMap<>();
 
     public EventHandler(Class<? extends Event> eventClass, EventManager eventManager) {
         this.eventClass = eventClass;
@@ -92,7 +98,7 @@ public class EventHandler {
     }
 
     private void handlePriority(EventPriority priority, Event event) {
-        ArrayList<Consumer<Event>> handlerList = this.priority2handlers.get(priority);
+        List<Consumer<Event>> handlerList = this.priority2handlers.get(priority);
         if (handlerList != null) {
             for (Consumer<Event> eventHandler : handlerList) {
                 try {
@@ -106,39 +112,43 @@ public class EventHandler {
     }
 
     public void subscribe(Consumer<Event> handler, EventPriority priority) {
-        List<Consumer<Event>> handlerList = this.priority2handlers.computeIfAbsent(priority, priority1 -> new ArrayList<>());
-        // Check if the event is already registered
-        if (!handlerList.contains(handler)) {
-            // Handler is not registered yet
-            handlerList.add(handler);
-        }
+        // compute(), not computeIfAbsent + separate addIfAbsent: a concurrent unsubscribe() can
+        // empty and remove the entry between the two, stranding this handler on the detached list.
+        this.priority2handlers.compute(priority, (p, handlerList) -> {
+            if (handlerList == null) {
+                handlerList = new CopyOnWriteArrayList<>();
+            }
+            handlerList.addIfAbsent(handler);
+            return handlerList;
+        });
     }
 
     /**
      * Removes all handlers matching the given predicate.
      * Used by plugin reload to drop subscriptions whose lambda/class belongs to an unloaded plugin.
      *
-     * @param matcher predicate that returns true for handlers that should be removed
+     * @param matcher predicate that returns true for handlers that should be removed.
+     *                Runs while the internal per-priority lock is held: it must not
+     *                subscribe or unsubscribe handlers of this event and should stay cheap.
      * @return number of handlers removed
      */
     public int unsubscribe(Predicate<Consumer<Event>> matcher) {
-        int removed = 0;
+        AtomicInteger removed = new AtomicInteger();
         for (EventPriority priority : EventPriority.values()) {
-            List<Consumer<Event>> handlerList = this.priority2handlers.get(priority);
-            if (handlerList == null) {
-                continue;
-            }
-            for (Iterator<Consumer<Event>> it = handlerList.iterator(); it.hasNext(); ) {
-                if (matcher.test(it.next())) {
-                    it.remove();
-                    removed++;
-                }
-            }
-            if (handlerList.isEmpty()) {
-                this.priority2handlers.remove(priority);
-            }
+            // computeIfPresent is atomic per priority: an emptied list is never removed while
+            // a concurrent subscribe() is adding a handler to it.
+            this.priority2handlers.computeIfPresent(priority, (p, handlerList) -> {
+                handlerList.removeIf(handler -> {
+                    if (matcher.test(handler)) {
+                        removed.incrementAndGet();
+                        return true;
+                    }
+                    return false;
+                });
+                return handlerList.isEmpty() ? null : handlerList;
+            });
         }
-        return removed;
+        return removed.get();
     }
 
     /**

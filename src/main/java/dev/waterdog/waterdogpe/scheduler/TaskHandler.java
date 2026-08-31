@@ -36,7 +36,8 @@ public class TaskHandler<T extends Runnable> {
     @Setter
     private int nextRunTick;
 
-    private boolean cancelled;
+    // Cancelled from any thread (unload/plugin API), read on tick/executor threads.
+    private volatile boolean cancelled;
 
     public TaskHandler(T task, int taskId, boolean async) {
         this.task = task;
@@ -48,6 +49,11 @@ public class TaskHandler<T extends Runnable> {
     }
 
     public void onRun(int currentTick) {
+        // A task queued on the async executor may be cancelled (e.g. plugin unload) before its
+        // turn comes - skip it instead of executing stale plugin code one last time.
+        if (this.cancelled) {
+            return;
+        }
         this.lastRunTick = currentTick;
         try {
             this.task.run();

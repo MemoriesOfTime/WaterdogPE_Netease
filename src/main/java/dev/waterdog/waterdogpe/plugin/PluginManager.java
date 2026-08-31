@@ -37,6 +37,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Stream;
 
 public class PluginManager {
@@ -54,9 +56,11 @@ public class PluginManager {
     private final ProxyServer proxy;
     private final PluginLoader pluginLoader;
 
-    protected final Object2ObjectMap<String, PluginClassLoader> pluginClassLoaders = new Object2ObjectArrayMap<>();
-    private final Object2ObjectMap<String, Plugin> pluginMap = new Object2ObjectArrayMap<>();
-    private final Object2ObjectMap<String, Class<?>> cachedClasses = new Object2ObjectArrayMap<>();
+    // Written on management paths (load/unload/reload, tick thread) but read from network
+    // threads whenever a plugin listener lazily resolves a class (getClassFromCache()).
+    protected final ConcurrentMap<String, PluginClassLoader> pluginClassLoaders = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Plugin> pluginMap = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Class<?>> cachedClasses = new ConcurrentHashMap<>();
     /**
      * Plugin name → on-disk jar path, populated in {@link #registerClassLoader} and consulted by
      * {@link #reloadPlugin(String)} so a single-plugin reload no longer has to re-scan (and re-parse

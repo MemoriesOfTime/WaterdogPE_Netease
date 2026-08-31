@@ -18,13 +18,11 @@ package dev.waterdog.waterdogpe.event;
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.plugin.Plugin;
 import dev.waterdog.waterdogpe.utils.ThreadFactoryBuilder;
-import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import lombok.Getter;
 
-import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 /**
@@ -37,8 +35,10 @@ public class EventManager {
     private final ProxyServer proxy;
     @Getter
     private final ExecutorService threadedExecutor;
+    // Fired from network threads (callEvent) while the tick thread may unsubscribe during a
+    // plugin reload - must stay a concurrent map.
     @Getter
-    private final Object2ObjectOpenHashMap<Class<? extends Event>, EventHandler> handlerMap = new Object2ObjectOpenHashMap<>();
+    private final Map<Class<? extends Event>, EventHandler> handlerMap = new ConcurrentHashMap<>();
 
     public EventManager(ProxyServer proxy) {
         this.proxy = proxy;
@@ -64,8 +64,15 @@ public class EventManager {
      * @see EventPriority
      */
     public <T extends Event> void subscribe(Class<T> event, Consumer<T> handler, EventPriority priority) {
-        EventHandler eventHandler = this.handlerMap.computeIfAbsent(event, e -> new EventHandler(event, this));
-        eventHandler.subscribe((Consumer<Event>) handler, priority);
+        // compute(), not computeIfAbsent + separate insert: a concurrent unsubscribe() can empty
+        // and remove the entry between the two, stranding this handler on the detached instance.
+        this.handlerMap.compute(event, (key, eventHandler) -> {
+            if (eventHandler == null) {
+                eventHandler = new EventHandler(key, this);
+            }
+            eventHandler.subscribe((Consumer<Event>) handler, priority);
+            return eventHandler;
+        });
     }
 
     /**
@@ -79,20 +86,22 @@ public class EventManager {
      * @return total number of handlers removed across all events
      */
     public int unsubscribe(ClassLoader loader) {
-        int removed = 0;
-        // handlerMap is a fastutil Object2ObjectOpenHashMap; iterate a snapshot to allow removal
-        for (Iterator<Map.Entry<Class<? extends Event>, EventHandler>> it = new ArrayList<>(this.handlerMap.entrySet()).iterator(); it.hasNext(); ) {
-            Map.Entry<Class<? extends Event>, EventHandler> entry = it.next();
-            EventHandler handler = entry.getValue();
-            removed += handler.unsubscribe(consumer -> {
-                ClassLoader consumerLoader = consumer.getClass().getClassLoader();
-                return consumerLoader != null && consumerLoader == loader;
+        AtomicInteger removed = new AtomicInteger();
+        // compute() is atomic per key against subscribe(); a null handler means a concurrent
+        // unsubscribe already drained the key after our weakly-consistent keySet() snapshot.
+        for (Class<? extends Event> event : this.handlerMap.keySet()) {
+            this.handlerMap.compute(event, (key, handler) -> {
+                if (handler == null) {
+                    return null;
+                }
+                removed.addAndGet(handler.unsubscribe(consumer -> {
+                    ClassLoader consumerLoader = consumer.getClass().getClassLoader();
+                    return consumerLoader != null && consumerLoader == loader;
+                }));
+                return handler.isEmpty() ? null : handler;
             });
-            if (handler.isEmpty()) {
-                this.handlerMap.remove(entry.getKey());
-            }
         }
-        return removed;
+        return removed.get();
     }
 
     /**
