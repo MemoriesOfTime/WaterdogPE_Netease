@@ -52,6 +52,8 @@ dependencies {
     implementation(libs.commons.lang3)
     implementation(libs.log4j.api)
     implementation(libs.log4j.core)
+    // libdatachannel logs through SLF4J, which without a binding silently drops everything
+    implementation(libs.log4j.slf4j2.impl)
     implementation(libs.disruptor)
     implementation(libs.jline.asProvider())
     implementation(libs.jline.terminal.asProvider())
@@ -77,6 +79,15 @@ dependencies {
     implementation(variantOf(libs.netty.transport.native.epoll) { classifier("linux-x86_64") })
     implementation(variantOf(libs.netty.transport.native.kqueue) { classifier("osx-x86_64") })
     implementation(libs.nimbus.jose.jwt)
+
+    // NetherNet transport. The arch-detect bundle carries the WebRTC bindings plus a native for
+    // every supported platform, so the shaded jar runs anywhere the proxy does.
+    implementation(libs.netty.transport.nethernet)
+    // NXS signaling, where the provider finds players rather than the proxy serving them
+    implementation(libs.netty.external.signaling)
+    implementation(libs.libdatachannel.java)
+    implementation(libs.libdatachannel.arch.detect)
+    implementation(libs.jose4j)
 
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)

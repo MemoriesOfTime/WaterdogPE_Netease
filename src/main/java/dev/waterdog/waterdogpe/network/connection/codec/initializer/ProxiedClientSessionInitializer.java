@@ -16,11 +16,12 @@
 package dev.waterdog.waterdogpe.network.connection.codec.initializer;
 
 import dev.waterdog.waterdogpe.network.NetworkMetrics;
+import dev.waterdog.waterdogpe.network.connection.TransportProfile;
 import dev.waterdog.waterdogpe.network.connection.client.BedrockClientConnection;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.codec.batch.BedrockBatchDecoder;
 import dev.waterdog.waterdogpe.network.connection.codec.batch.BedrockBatchEncoder;
-import dev.waterdog.waterdogpe.network.connection.codec.batch.FrameIdCodec;
+import dev.waterdog.waterdogpe.network.connection.codec.batch.TransportFrameCodec;
 import dev.waterdog.waterdogpe.network.connection.codec.client.ClientEventHandler;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.CompressionType;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.ProxiedCompressionCodec;
@@ -40,9 +41,9 @@ import org.cloudburstmc.protocol.bedrock.netty.codec.compression.CompressionCode
 import static dev.waterdog.waterdogpe.network.connection.codec.initializer.ProxiedSessionInitializer.*;
 
 public class ProxiedClientSessionInitializer extends ChannelInitializer<Channel> {
-    private final ProxiedPlayer player;
-    private final ServerInfo serverInfo;
-    private final Promise<ClientConnection> promise;
+    protected final ProxiedPlayer player;
+    protected final ServerInfo serverInfo;
+    protected final Promise<ClientConnection> promise;
 
     public ProxiedClientSessionInitializer(ProxiedPlayer player, ServerInfo serverInfo, Promise<ClientConnection> promise) {
         this.player = player;
@@ -53,9 +54,7 @@ public class ProxiedClientSessionInitializer extends ChannelInitializer<Channel>
     @Override
     protected void initChannel(Channel channel) {
         boolean netEaseClient = this.player.isNetEaseClient();
-        int rakVersion = netEaseClient
-                ? this.player.getProtocol().getNetEaseRaknetVersion()
-                : this.player.getProtocol().getRaknetVersion();
+        int rakVersion = this.getTransportProfile().codecVersion();
         CompressionType compression = this.player.getProxy().getConfiguration().getCompression();
 
         channel.attr(PacketDirection.ATTRIBUTE).set(PacketDirection.SERVER_BOUND);
@@ -70,7 +69,7 @@ public class ProxiedClientSessionInitializer extends ChannelInitializer<Channel>
         }
 
         channel.pipeline()
-                .addLast(FrameIdCodec.NAME, RAKNET_FRAME_CODEC)
+                .addLast(TransportFrameCodec.NAME, this.getFrameCodec())
                 .addLast(CompressionCodec.NAME, new ProxiedCompressionCodec(getCompressionStrategy(compression, rakVersion, true, netEaseClient), false))
                 .addLast(BedrockBatchDecoder.NAME, BATCH_DECODER)
                 .addLast(BedrockBatchEncoder.NAME, new BedrockBatchEncoder())
@@ -100,6 +99,20 @@ public class ProxiedClientSessionInitializer extends ChannelInitializer<Channel>
         var codec = this.player.isNetEaseClient() ? protocol.getNetEaseCodec() : protocol.getCodec();
         packetCodec.setCodecHelper(codec,
                 ClientConnection.createCodecHelperSnapshot(codec, this.player.getConnection().getPeer().getCodecHelper()));
+    }
+
+    /**
+     * Framing ahead of the compression codec, registered under {@link TransportFrameCodec#NAME} whatever
+     * the transport is so everything above it stays shared.
+     */
+    protected ChannelHandler getFrameCodec() {
+        return RAKNET_FRAME_CODEC;
+    }
+
+    protected TransportProfile getTransportProfile() {
+        ProtocolVersion protocol = this.player.getProtocol();
+        return TransportProfile.raknet(this.player.isNetEaseClient() ?
+                protocol.getNetEaseRaknetVersion() : protocol.getRaknetVersion());
     }
 
     @RequiredArgsConstructor

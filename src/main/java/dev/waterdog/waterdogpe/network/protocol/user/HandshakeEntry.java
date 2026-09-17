@@ -40,6 +40,7 @@ public class HandshakeEntry {
     private final boolean isChainPayload;
     private final boolean netEaseClient;
     private final LoginData.NetEaseData netEaseData;
+    /** The credentials exactly as the client sent them, kept for chain forwarding. */
     private final boolean shouldSendCertificateChain;
     @Setter
     private ProtocolVersion protocol;

@@ -24,6 +24,7 @@ import dev.waterdog.waterdogpe.network.connection.codec.compression.CompressionT
 import dev.waterdog.waterdogpe.network.connection.codec.initializer.ProxiedSessionInitializer;
 import dev.waterdog.waterdogpe.network.connection.peer.BedrockServerSession;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
+import org.cloudburstmc.netty.util.nethernet.TransportIdentityBinding;
 import dev.waterdog.waterdogpe.network.protocol.user.HandshakeEntry;
 import dev.waterdog.waterdogpe.network.protocol.user.HandshakeUtils;
 import dev.waterdog.waterdogpe.network.protocol.user.LoginData;
@@ -245,6 +246,23 @@ public class LoginUpstreamHandler implements BedrockPacketHandler {
                 return PacketSignal.HANDLED;
             }
 
+            // Without Bedrock encryption nothing else proves the sender holds the chain's key, so
+            // the transport identity has to. See TransportIdentityBinding.
+            if (!this.session.getPeer().getTransportProfile().supportsEncryption()) {
+                Channel channel = this.session.getPeer().getChannel();
+                // Offline mode has already given up on proving who this is, so there is no key worth
+                // comparing. The binding is still spent, or an external admission would expire under
+                // a session that is already playing.
+                String refusal = strictAuth
+                        ? TransportIdentityBinding.mismatch(channel, handshakeEntry.getIdentityPublicKey())
+                        : TransportIdentityBinding.acceptForwardedIdentity(channel);
+                if (refusal != null) {
+                    this.onLoginFailed(handshakeEntry, null, "disconnectionScreen.notAuthenticated");
+                    this.proxy.getLogger().info("[{}|{}] <-> Upstream has disconnected, {}", this.session.getSocketAddress(), handshakeEntry.getDisplayName(), refusal);
+                    return PacketSignal.HANDLED;
+                }
+            }
+
             // BLAMEMOJANG: these versions includes protocol changes, but protocol version was not increased.
             if (protocol.equals(ProtocolVersion.MINECRAFT_PE_1_19_60) && handshakeEntry.getClientData().has("GameVersion") &&
                 ProtocolVersion.MINECRAFT_PE_1_19_62.getMinecraftVersion().equals(handshakeEntry.getClientData().get("GameVersion").getAsString())) {
@@ -276,7 +294,8 @@ public class LoginUpstreamHandler implements BedrockPacketHandler {
                 return PacketSignal.HANDLED;
             }
 
-            if (this.proxy.getConfiguration().isUpstreamEncryption()) {
+            if (this.proxy.getConfiguration().isUpstreamEncryption()
+                    && this.session.getPeer().getTransportProfile().supportsEncryption()) {
                 HandshakeUtils.processEncryption(session, handshakeEntry.getIdentityPublicKey());
             } else {
                 this.finishConnection();

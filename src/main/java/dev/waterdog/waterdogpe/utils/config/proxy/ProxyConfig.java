@@ -46,7 +46,7 @@ public class ProxyConfig extends YamlConfig {
 
     @Path("listener.name")
     @Comment("The name that is shown up in the player list (pause menu)")
-    private String name = "§bWaterdog§3PE";
+    private String name = "WaterdogPE";
 
     @Path("listener.priorities")
     @Comment("The server priority list. If not changed by plugins, the proxy will connect the player to the first of those servers")
@@ -80,6 +80,10 @@ public class ProxyConfig extends YamlConfig {
     @Comment("Connection and security related settings. Do NOT edit unless you know what you are doing!")
     private NetworkSettings networkSettings = new NetworkSettings();
 
+    @Path("nethernet")
+    @Comment("NetherNet transport settings.")
+    private NetherNetSettings netherNetSettings = new NetherNetSettings();
+
     @Path("permissions")
     @Comment("Case-Sensitive permission list for players (empty using {})")
     private Object2ObjectOpenHashMap<String, List<String>> playerPermissions = new Object2ObjectOpenHashMap<>() {{
@@ -89,7 +93,7 @@ public class ProxyConfig extends YamlConfig {
 
     @Path("permissions_default")
     @Comment("List of permissions each player should get by default (empty using [])")
-    private List<String> defaultPermissions = new ArrayList<>(Arrays.asList("waterdog.command.help", "waterdog.command.info"));
+    private List<String> defaultPermissions = new ArrayList<>(Arrays.asList("waterdog.command.help", "waterdog.command.info", "waterdog.command.me"));
 
     @Path("enable_debug")
     @Comment("Whether the debug output in the console should be enabled or not")
@@ -236,6 +240,34 @@ public class ProxyConfig extends YamlConfig {
             this.addConverter(CompressionAlgorithmConverter.class);
         } catch (InvalidConverterException e) {
             ProxyServer.getInstance().getLogger().error("Error while initiating config converters", e);
+        }
+    }
+
+    // The MOT Yamler fork resets comments at the start of save() and only collects the root class's
+    // own, so section comments have to be registered from saveToYaml(), past that reset.
+    private transient boolean saveComments = true;
+
+    @Override
+    public void save(boolean withComments) throws InvalidConfigurationException {
+        this.saveComments = withComments;
+        super.save(withComments);
+    }
+
+    @Override
+    protected void saveToYaml() throws InvalidConfigurationException {
+        if (this.saveComments) {
+            SettingsSection.describeSections(this);
+        }
+        super.saveToYaml();
+    }
+
+    @Override
+    public void load() throws InvalidConfigurationException {
+        super.load();
+        // Yamler writes the file back only when a key is missing at the root, so a section that
+        // gained an option has to ask for it
+        if (SettingsSection.upgradedSections(this)) {
+            this.save();
         }
     }
 

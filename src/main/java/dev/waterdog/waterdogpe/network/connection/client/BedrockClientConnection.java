@@ -16,7 +16,7 @@
 package dev.waterdog.waterdogpe.network.connection.client;
 
 import dev.mot.protocol.extension.BedrockCryptoUtils;
-import dev.waterdog.waterdogpe.network.connection.codec.batch.FrameIdCodec;
+import dev.waterdog.waterdogpe.network.connection.codec.batch.TransportFrameCodec;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.CompressionType;
 import dev.waterdog.waterdogpe.network.connection.codec.compression.ProxiedCompressionCodec;
 import dev.waterdog.waterdogpe.network.connection.codec.initializer.ProxiedSessionInitializer;
@@ -35,6 +35,7 @@ import io.netty.util.concurrent.ScheduledFuture;
 import io.netty.util.internal.PlatformDependent;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import lombok.extern.log4j.Log4j2;
+import org.cloudburstmc.netty.channel.nethernet.NetherNetChannel;
 import org.cloudburstmc.netty.channel.raknet.RakChannel;
 import org.cloudburstmc.netty.handler.codec.raknet.common.RakSessionCodec;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
@@ -194,7 +195,7 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
 
             ChannelHandler handler = this.channel.pipeline().get(CompressionCodec.NAME);
             if (handler == null) {
-                this.channel.pipeline().addAfter(FrameIdCodec.NAME, CompressionCodec.NAME, new ProxiedCompressionCodec(strategy, needsPrefix));
+                this.channel.pipeline().addAfter(TransportFrameCodec.NAME, CompressionCodec.NAME, new ProxiedCompressionCodec(strategy, needsPrefix));
             } else {
                 this.channel.pipeline().replace(CompressionCodec.NAME, CompressionCodec.NAME, new ProxiedCompressionCodec(strategy, needsPrefix));
             }
@@ -218,9 +219,9 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
             int protocolVersion = this.getCodec().getProtocolVersion();
             boolean useCtr = protocolVersion >= Bedrock_v428.CODEC.getProtocolVersion();
 
-            this.channel.pipeline().addAfter(FrameIdCodec.NAME, BedrockEncryptionEncoder.NAME,
+            this.channel.pipeline().addAfter(TransportFrameCodec.NAME, BedrockEncryptionEncoder.NAME,
                     new BedrockEncryptionEncoder(secretKey, BedrockCryptoUtils.createCipher(useCtr, true, secretKey)));
-            this.channel.pipeline().addAfter(FrameIdCodec.NAME, BedrockEncryptionDecoder.NAME,
+            this.channel.pipeline().addAfter(TransportFrameCodec.NAME, BedrockEncryptionDecoder.NAME,
                     new BedrockEncryptionDecoder(secretKey, BedrockCryptoUtils.createCipher(useCtr, false, secretKey)));
 
             log.info("Encryption enabled for {}", this.getSocketAddress());
@@ -253,6 +254,9 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
         if (this.channel instanceof RakChannel rakChannel) {
             return rakChannel.rakPipeline().get(RakSessionCodec.class).getPing();
         }
+        if (this.channel instanceof NetherNetChannel netherNetChannel) {
+            return netherNetChannel.getPing();
+        }
         return 0;
     }
 
@@ -269,6 +273,13 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
     @Override
     public boolean isConnected() {
         return this.channel.isOpen();
+    }
+
+    /**
+     * The transport channel, for diagnostics. Anything sent through it bypasses the codec.
+     */
+    public Channel getChannel() {
+        return this.channel;
     }
 
     @Override

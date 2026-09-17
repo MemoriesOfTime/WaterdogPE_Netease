@@ -141,6 +141,7 @@ public class ProtocolCodecs {
         HANDLED_PACKETS.add(SubChunkPacket.class);
         HANDLED_PACKETS.add(ChunkRadiusUpdatedPacket.class);
         HANDLED_PACKETS.add(DebugDrawerPacket.class);
+        HANDLED_PACKETS.add(ServerStoreInfoPacket.class);
     }
 
     private static final List<ProtocolCodecUpdater> UPDATERS = new ObjectArrayList<>();

@@ -37,7 +37,7 @@ public class InfoCommand extends Command {
         sender.sendMessage("§bRunning WaterdogPE version §3" + versionInfo.baseVersion() + "§b!\n" +
                 "§3Build Version: §b" + versionInfo.buildVersion() + "\n" +
                 "§3Latest Protocol: §b" + versionInfo.latestProtocolVersion() + "\n" +
-                "§3Branch: §b " + versionInfo.branchName() + "§3 CommitId:§b " + versionInfo.commitId() + "\n" +
+                "§3Branch: §b" + versionInfo.branchName() + "§3 CommitId:§b " + versionInfo.commitId() + "\n" +
                 "§3Author: §b" + versionInfo.author() + "\n" +
                 "§3Developer Mode: " + (versionInfo.debug() ? "§cenabled" : "§adisabled"));
         return true;

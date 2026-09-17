@@ -20,6 +20,8 @@ import dev.mot.protocol.extension.BedrockCryptoUtils;
 import dev.waterdog.waterdogpe.event.defaults.ServerTransferEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
+import org.cloudburstmc.protocol.bedrock.data.ClientStoreEntrypointConfiguration;
+import org.cloudburstmc.protocol.bedrock.data.ServerConfigurationJoinInfo;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
@@ -48,6 +50,7 @@ import java.net.URI;
 import java.security.interfaces.ECPublicKey;
 import java.util.Base64;
 import java.util.Collection;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -267,6 +270,19 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
         injectSetDifficulty(this.player.getConnection(), packet.getDifficulty());
         injectGameRules(this.player.getConnection(), packet.getGamerules());
         injectTime(this.player.getConnection(), packet.getDayCycleStopTime());
+
+        // Client reads the store entrypoint only from the StartGamePacket sent on the first join,
+        // therefore it has to be updated explicitly when the new server advertises a different one.
+        if (this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_26_20)) {
+            ServerConfigurationJoinInfo joinInfo = packet.getServerConfigurationJoinInfo();
+            ClientStoreEntrypointConfiguration storeEntrypoint = joinInfo == null ? null : joinInfo.getClientStoreEntrypointConfiguration();
+            if (!Objects.equals(rewriteData.getStoreEntrypoint(), storeEntrypoint)) {
+                rewriteData.setStoreEntrypoint(storeEntrypoint);
+                ServerStoreInfoPacket storeInfoPacket = new ServerStoreInfoPacket();
+                storeInfoPacket.setStore(storeEntrypoint);
+                this.player.getConnection().sendPacket(storeInfoPacket);
+            }
+        }
 
         this.connection.sendPacket(this.player.getLoginData().getChunkRadius());
 
