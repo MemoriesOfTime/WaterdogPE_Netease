@@ -60,6 +60,10 @@ public class ConnectedDownstreamHandler extends AbstractDownstreamHandler {
     @Override
     public PacketSignal handle(ServerStoreInfoPacket packet) {
         this.player.getRewriteData().setStoreEntrypoint(packet.getStore());
+        if (this.player.getLoginData().isJavaClient()) {
+            // ViaBedrock has no Java mapping; forwarding this mid-transfer breaks the client.
+            return Signals.CANCEL;
+        }
         return PacketSignal.UNHANDLED;
     }
 

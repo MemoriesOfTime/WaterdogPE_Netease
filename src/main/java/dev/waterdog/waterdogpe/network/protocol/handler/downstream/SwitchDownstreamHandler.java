@@ -273,7 +273,8 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
 
         // Client reads the store entrypoint only from the StartGamePacket sent on the first join,
         // therefore it has to be updated explicitly when the new server advertises a different one.
-        if (this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_26_20)) {
+        if (this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_26_20)
+                && !this.player.getLoginData().isJavaClient()) {
             ServerConfigurationJoinInfo joinInfo = packet.getServerConfigurationJoinInfo();
             ClientStoreEntrypointConfiguration storeEntrypoint = joinInfo == null ? null : joinInfo.getClientStoreEntrypointConfiguration();
             if (!Objects.equals(rewriteData.getStoreEntrypoint(), storeEntrypoint)) {
