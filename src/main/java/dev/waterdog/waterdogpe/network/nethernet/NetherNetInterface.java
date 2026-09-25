@@ -15,36 +15,33 @@
 
 package dev.waterdog.waterdogpe.network.nethernet;
 
+import org.cloudburstmc.netty.channel.nethernet.signaling.IceServerInfo;
+import org.cloudburstmc.netty.channel.nethernet.signaling.JoinRefusal;
 import org.cloudburstmc.netty.channel.nethernet.NetherNetChannelFactory;
-import org.cloudburstmc.netty.channel.nethernet.signaling.NetherNetHTTPSignaling;
-import org.cloudburstmc.netty.channel.nethernet.signaling.NetherNetServerSignaling.PongData;
-import org.cloudburstmc.netty.channel.nethernet.signaling.NetherNetSignaling;
+import org.cloudburstmc.netty.channel.nethernet.signaling.NetherNetHTTPServerSignaling;
+import org.cloudburstmc.netty.channel.nethernet.signaling.PongData;
 import org.cloudburstmc.netty.util.nethernet.TokenTrust;
 import org.cloudburstmc.netty.util.nethernet.TrustedProxies;
+import org.cloudburstmc.netty.channel.nethernet.config.DefaultNetherServerChannelConfig;
 import org.cloudburstmc.netty.channel.nethernet.config.NetherChannelOption;
+import org.cloudburstmc.netty.channel.nethernet.config.NetherServerMetrics;
 import org.cloudburstmc.netty.util.nethernet.NetherNetLogging;
 import org.cloudburstmc.netty.util.nethernet.SecretValue;
-import org.cloudburstmc.netty.util.nethernet.ServerIdentity;
-import tel.schich.libdatachannel.LibDataChannelArchDetect;
+import org.cloudburstmc.netty.util.nethernet.OperatorIdentity;
 import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.event.defaults.ProxyPingEvent;
 import dev.waterdog.waterdogpe.network.NetworkInterface;
 import dev.waterdog.waterdogpe.network.connection.codec.initializer.NetherNetServerSessionInitializer;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
-import dev.waterdog.waterdogpe.utils.ThreadFactoryBuilder;
 import dev.waterdog.waterdogpe.utils.config.proxy.HttpsSettings;
 import dev.waterdog.waterdogpe.utils.config.proxy.NetherNetSettings;
 import dev.waterdog.waterdogpe.utils.config.proxy.ProxyConfig;
+import dev.waterdog.waterdogpe.network.NetworkMetrics;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelConfig;
-import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.ChannelInitializer;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import lombok.extern.log4j.Log4j2;
 
-import tel.schich.libdatachannel.PeerConnectionConfiguration;
 
 import java.net.InetAddress;
 import java.nio.file.Path;
@@ -66,17 +63,17 @@ import java.util.concurrent.CompletableFuture;
 @Log4j2
 public class NetherNetInterface implements NetworkInterface, SignalingService {
 
-    private EventLoopGroup signalingGroup;
-
     private static final int GAME_TYPE_SURVIVAL = 0;
     private static final int GAME_TYPE_CREATIVE = 1;
     private static final int GAME_TYPE_ADVENTURE = 2;
 
     private final ProxyServer proxy;
     private final List<Binding> bindings = new ObjectArrayList<>();
+
+    private volatile NetherServerMetrics serverMetrics;
     private volatile NetherNetProvider provider;
     /** Stable for the lifetime of the process, like the BDS advertisement nonce. */
-    private ServerIdentity identity;
+    private OperatorIdentity identity;
     private boolean running;
 
     public NetherNetInterface(ProxyServer proxy) {
@@ -113,7 +110,7 @@ public class NetherNetInterface implements NetworkInterface, SignalingService {
             }
         }
 
-        NetherNetHTTPSignaling signaling;
+        NetherNetHTTPServerSignaling signaling;
         try {
             signaling = this.signaling(settings, address, icePort);
         } catch (Exception e) {
@@ -123,25 +120,19 @@ public class NetherNetInterface implements NetworkInterface, SignalingService {
 
         try {
             ServerBootstrap bootstrap = new ServerBootstrap()
-                    // The signaling endpoint binds an NIO channel, so it needs a matching loop.
-                    // Nothing hot runs here: the media is handled by the native ICE and DTLS stack.
-                    .group(this.signalingGroup())
+                    // Nothing hot runs on this loop: the listener has one of its own and the
+                    // media is handled by the native ICE and DTLS stack
+                    .group(this.proxy.getWorkerEventLoopGroup())
                     .channelFactory(NetherNetChannelFactory.server(signaling))
-                    .option(NetherChannelOption.NETHER_SERVER_RTC_HANDSHAKE_TIMEOUT_SECONDS, settings.getHandshakeTimeout())
-                    .handler(new ChannelInitializer<Channel>() {
-                        @Override
-                        protected void initChannel(Channel channel) {
-                            if (icePort <= 0) {
-                                return;
-                            }
-                            // Runs before the first connection, so every peer sees the pinned port
-                            ChannelConfig options = channel.config();
-                            options.setOption(NetherChannelOption.NETHER_PEER_CONNECTION_CONFIG,
-                                    pinIce(options.getOption(NetherChannelOption.NETHER_PEER_CONNECTION_CONFIG),
-                                            address.getAddress(), icePort));
-                        }
-                    })
+                    .option(NetherChannelOption.NETHER_SERVER_RTC_HANDSHAKE_TIMEOUT_SECONDS,
+                            NetherNetProperties.HANDSHAKE_TIMEOUT)
+                    .option(NetherChannelOption.NETHER_SERVER_METRICS, this.serverMetrics)
                     .childHandler(new NetherNetServerSessionInitializer(this.proxy));
+            if (icePort > 0) {
+                // Media on its own port, because the signaling port is only free on the TCP side
+                bootstrap.option(NetherChannelOption.NETHER_SERVER_ICE_ADDRESS,
+                        new InetSocketAddress(address.getAddress(), icePort));
+            }
 
             // The channel binds signaling over TCP here; RakNet keeps the UDP side of the same port
             Channel channel = bootstrap.bind(signalingAddress).syncUninterruptibly().channel();
@@ -184,29 +175,29 @@ public class NetherNetInterface implements NetworkInterface, SignalingService {
     }
 
     /**
-     * The configured STUN and TURN servers, as one entry carrying every URL. Credentials belong in
-     * the URL, which is the only place the configuration has to put them.
+     * The STUN and TURN servers from the system property, as one entry carrying every URL.
+     * Credentials belong in the URL, which is the only place they have to go.
      */
-    private static List<NetherNetSignaling.IceServerInfo> iceServers(NetherNetSettings settings) {
-        List<String> urls = settings.getIceServers();
+    private static List<IceServerInfo> iceServers() {
+        List<String> urls = NetherNetProperties.ICE_SERVERS;
         if (urls.isEmpty()) {
             return List.of();
         }
-        return List.of(new NetherNetSignaling.IceServerInfo.Builder().setUrls(List.copyOf(urls)).build());
+        return List.of(new IceServerInfo.Builder().setUrls(List.copyOf(urls)).build());
     }
 
     /**
      * Builds the signaling endpoint from the configuration.
      */
-    private NetherNetHTTPSignaling signaling(NetherNetSettings settings, InetSocketAddress address, int icePort)
+    private NetherNetHTTPServerSignaling signaling(NetherNetSettings settings, InetSocketAddress address, int icePort)
             throws Exception {
-        NetherNetHTTPSignaling.Builder builder = new NetherNetHTTPSignaling.Builder()
+        NetherNetHTTPServerSignaling.Builder builder = new NetherNetHTTPServerSignaling.Builder()
                 .setIdentity(this.identity)
                 .setServeHttp(settings.signalingMode().builtin())
                 .setTrustedProxies(TrustedProxies.parse(settings.getTrustedProxies()))
                 .setProxyProtocol(settings.isProxyProtocol())
                 .setAdvertisedAddresses(advertisedAddresses(address, settings))
-                .setIceServers(iceServers(settings))
+                .setIceServers(iceServers())
                 // RakNet holds the UDP side of the signaling port, so ICE never uses it
                 .setIceOnLocalPort(false)
                 // A peer may be another proxy signing its own assertion, which no auth service issued
@@ -230,26 +221,12 @@ public class NetherNetInterface implements NetworkInterface, SignalingService {
     }
 
     /**
-     * Sends ICE to its own port, because the signaling port is only free on the TCP side.
-     */
-    private static PeerConnectionConfiguration pinIce(PeerConnectionConfiguration config, InetAddress host, int port) {
-        // A wildcard bind is left unset so ICE keeps gathering on every interface
-        if (host != null && !host.isAnyLocalAddress()) {
-            config = config.withBindAddress(host);
-        }
-        return config
-                .withEnableIceUdpMux(true)
-                .withPortRangeBegin(port)
-                .withPortRangeEnd(port);
-    }
-
-    /**
      * The signaling port defaults to the listener port, which is where clients look for it. An
      * override only applies to the primary bind, additional ports always mirror their own.
      */
     private InetSocketAddress signalingAddress(InetSocketAddress address, NetherNetSettings settings) {
-        int port = settings.getSignalingPort() > 0 && this.bindings.isEmpty()
-                ? settings.getSignalingPort() : address.getPort();
+        int port = NetherNetProperties.SIGNALING_PORT > 0 && this.bindings.isEmpty()
+                ? NetherNetProperties.SIGNALING_PORT : address.getPort();
         return new InetSocketAddress(address.getAddress(), port);
     }
 
@@ -258,11 +235,8 @@ public class NetherNetInterface implements NetworkInterface, SignalingService {
             return;
         }
 
-        // Loads the native built for this platform out of the bundled set.
-        LibDataChannelArchDetect.initialize();
-
         // The native ICE and DTLS stack logs through slf4j once a threshold is set.
-        NetherNetLogging.setNativeLogLevel(System.getProperty("waterdog.nethernetLog", "WARN"));
+        NetherNetLogging.setNativeLogLevel(NetherNetProperties.NATIVE_LOG_LEVEL);
 
         this.identity = ProxyIdentity.identity(this.proxy);
         log.info("NetherNet identifies this operator to players as {}", ProxyIdentity.domain(this.proxy));
@@ -285,14 +259,6 @@ public class NetherNetInterface implements NetworkInterface, SignalingService {
             return Set.of();
         }
         return Set.of(bound.getHostAddress());
-    }
-
-    private synchronized EventLoopGroup signalingGroup() {
-        if (this.signalingGroup == null) {
-            this.signalingGroup = new NioEventLoopGroup(1, ThreadFactoryBuilder.builder()
-                    .format("NetherNet Signaling - #%d").build());
-        }
-        return this.signalingGroup;
     }
 
     /**
@@ -356,7 +322,7 @@ public class NetherNetInterface implements NetworkInterface, SignalingService {
      * rather than capacity, and refusing signaling on it would lock out every join past the first.
      */
     boolean isFull() {
-        int limit = this.proxy.getNetherNetSettings().getMaxConnections();
+        int limit = NetherNetProperties.MAX_CONNECTIONS;
         return limit > 0 && this.proxy.getPlayerManager().getPlayers().size() >= limit;
     }
 
@@ -369,8 +335,14 @@ public class NetherNetInterface implements NetworkInterface, SignalingService {
     }
 
     @Override
-    public boolean acceptsConnections() {
-        return this.running && !this.bindings.isEmpty() && !this.isFull();
+    public JoinRefusal acceptsConnections() {
+        if (!this.running || this.bindings.isEmpty()) {
+            return JoinRefusal.ERROR;
+        }
+        if (this.isFull()) {
+            return JoinRefusal.FULL;
+        }
+        return null;
     }
 
     /**
@@ -410,11 +382,6 @@ public class NetherNetInterface implements NetworkInterface, SignalingService {
             this.provider.close();
             this.provider = null;
         }
-
-        if (this.signalingGroup != null) {
-            this.signalingGroup.shutdownGracefully();
-            this.signalingGroup = null;
-        }
     }
 
     @Override
@@ -422,7 +389,18 @@ public class NetherNetInterface implements NetworkInterface, SignalingService {
         return this.running;
     }
 
-    private record Binding(NetherNetHTTPSignaling signaling, Channel channel) {
+    @Override
+    public void setNetworkMetrics(NetworkMetrics metrics) {
+        this.serverMetrics = metrics == null ? null : metrics.netherServerMetrics();
+        for (Binding binding : this.bindings) {
+            // setOption rejects null, and clearing the metrics again has to work.
+            if (binding.channel().config() instanceof DefaultNetherServerChannelConfig config) {
+                config.setServerMetrics(this.serverMetrics);
+            }
+        }
+    }
+
+    private record Binding(NetherNetHTTPServerSignaling signaling, Channel channel) {
     }
 
     /**

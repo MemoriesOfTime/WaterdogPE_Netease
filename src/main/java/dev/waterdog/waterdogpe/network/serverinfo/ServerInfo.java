@@ -19,8 +19,6 @@ import dev.waterdog.waterdogpe.ProxyServer;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import io.netty.util.concurrent.Future;
-import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
-import it.unimi.dsi.fastutil.objects.ObjectSets;
 import lombok.Getter;
 import lombok.ToString;
 
@@ -29,6 +27,7 @@ import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -73,8 +72,8 @@ public abstract class ServerInfo {
     private volatile long resolvedAt;
     private final AtomicBoolean resolving = new AtomicBoolean(false);
 
-    private final Set<ClientConnection> connections = ObjectSets.synchronize(new ObjectOpenHashSet<>());
-    private final Set<ProxiedPlayer> players = ObjectSets.synchronize(new ObjectOpenHashSet<>());
+    private final Set<ClientConnection> connections = ConcurrentHashMap.newKeySet();
+    private final Set<ProxiedPlayer> players = ConcurrentHashMap.newKeySet();
 
     public ServerInfo(String serverName, InetSocketAddress address, InetSocketAddress publicAddress) {
         this.serverName = serverName;
@@ -114,7 +113,9 @@ public abstract class ServerInfo {
             // getByName on an IP literal is purely local (no network), so IP-configured servers resolve cheaply
             // and still short-circuit Netty's resolver because the result is a resolved InetSocketAddress.
             InetAddress resolved = InetAddress.getByName(configured.getHostString());
-            this.resolvedAddress = new InetSocketAddress(resolved, configured.getPort());
+            // Keeps the configured name on the address: HTTPS signaling validates the certificate against it
+            this.resolvedAddress = new InetSocketAddress(
+                    InetAddress.getByAddress(configured.getHostString(), resolved.getAddress()), configured.getPort());
         } catch (UnknownHostException e) {
             // Keep the last-known-good (or the raw configured) address; a transient DNS failure must not break
             // connects. The next access past the TTL will retry.

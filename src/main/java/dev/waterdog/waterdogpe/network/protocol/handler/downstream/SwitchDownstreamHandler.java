@@ -189,7 +189,7 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
 
         LongSet blobs = this.player.getChunkBlobs();
         if (this.player.getProtocol().isBefore(ProtocolVersion.MINECRAFT_PE_1_18_30) &&
-                this.player.getLoginData().getCachePacket().isSupported() && !blobs.isEmpty()) {
+                this.player.getLoginData().isCacheSupported() && !blobs.isEmpty()) {
             injectChunkCacheBlobs(this.player.getConnection(), blobs);
         }
         this.player.getChunkBlobs().clear();
@@ -284,7 +284,10 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
             }
         }
 
-        this.connection.sendPacket(this.player.getLoginData().getChunkRadius());
+        RequestChunkRadiusPacket chunkRadius = new RequestChunkRadiusPacket();
+        chunkRadius.setRadius(this.player.getLoginData().getChunkRadius());
+        chunkRadius.setMaxRadius(this.player.getLoginData().getMaxChunkRadius());
+        this.connection.sendPacket(chunkRadius);
 
         // Client does not accept ChangeDimensionPacket when dimension is same as current dimension.
         // If we transfer between same dimensions we are attempting to do dimension change sequence which uses 2 dim changes
@@ -309,7 +312,9 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
             // symmetrically on success, failure and timeout via freezeInjected.
             injectEntityImmobile(this.player.getConnection(), rewriteData.getEntityId(), true);
             if (this.player.getProtocol().isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_19_50)) {
-                injectInputLocks(this.player.getConnection(), INPUT_LOCK_FREEZE, fakePosition);
+                // Anchor at the real spawn position, not the fake one the client is about to be moved to
+                // (upstream #466).
+                injectInputLocks(this.player.getConnection(), INPUT_LOCK_FREEZE, packet.getPlayerPosition());
             }
             transferCallback.markFreezeInjected();
 

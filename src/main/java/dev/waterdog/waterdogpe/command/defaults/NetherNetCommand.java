@@ -15,6 +15,7 @@
 
 package dev.waterdog.waterdogpe.command.defaults;
 
+import org.cloudburstmc.netty.channel.nethernet.signaling.JoinRefusal;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -24,6 +25,7 @@ import dev.waterdog.waterdogpe.command.CommandSender;
 import dev.waterdog.waterdogpe.command.CommandSettings;
 import dev.waterdog.waterdogpe.network.connection.TransportProfile;
 import dev.waterdog.waterdogpe.network.nethernet.NetherNetInterface;
+import dev.waterdog.waterdogpe.network.nethernet.NetherNetProperties;
 import dev.waterdog.waterdogpe.network.nethernet.NetherNetProvider;
 import dev.waterdog.waterdogpe.network.nethernet.ProxyIdentity;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
@@ -105,9 +107,9 @@ public class NetherNetCommand extends Command {
                     .append(provider != null && provider.isRunning() ? "§aregistered" : "§cnot registered").append('\n');
         }
 
-        sb.append("§3Accepting connections: ").append(yesNo(nethernet.acceptsConnections()));
-        if (settings.getMaxConnections() > 0) {
-            sb.append(" §3(limit §b").append(settings.getMaxConnections()).append("§3)");
+        sb.append("§3Accepting connections: ").append(refusal(nethernet.acceptsConnections()));
+        if (NetherNetProperties.MAX_CONNECTIONS > 0) {
+            sb.append(" §3(limit §b").append(NetherNetProperties.MAX_CONNECTIONS).append("§3)");
         }
         sb.append('\n');
 
@@ -223,7 +225,7 @@ public class NetherNetCommand extends Command {
      */
     private String identityFingerprint(ProxyServer proxy) {
         try {
-            byte[] key = ProxyIdentity.identity(proxy).keyPair().getPublic().getEncoded();
+            byte[] key = ProxyIdentity.identity(proxy).publicKey().getEncoded();
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(key));
         } catch (Exception e) {
             return null;
@@ -232,5 +234,12 @@ public class NetherNetCommand extends Command {
 
     private static String yesNo(boolean value) {
         return value ? "§ayes" : "§cno";
+    }
+
+    private static String refusal(JoinRefusal refusal) {
+        if (refusal == null) {
+            return "§ayes";
+        }
+        return refusal.toString();
     }
 }

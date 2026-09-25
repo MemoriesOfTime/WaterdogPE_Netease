@@ -25,9 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.cloudburstmc.protocol.bedrock.data.auth.AuthType;
 import org.cloudburstmc.protocol.bedrock.data.auth.CertificateChainPayload;
 import org.cloudburstmc.protocol.bedrock.data.auth.TokenPayload;
-import org.cloudburstmc.protocol.bedrock.packet.ClientCacheStatusPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LoginPacket;
-import org.cloudburstmc.protocol.bedrock.packet.RequestChunkRadiusPacket;
 
 import java.net.SocketAddress;
 import java.security.KeyPair;
@@ -66,12 +64,15 @@ public class LoginData {
     private final boolean netEaseClient;
     private final boolean isChainPayload;
     private LoginPacket loginPacket;
+
+    // Values rather than packets, so every send builds its own
     @Setter
     @Builder.Default
-    private RequestChunkRadiusPacket chunkRadius = PlayerRewriteUtils.defaultChunkRadius;
+    private int chunkRadius = 8;
     @Setter
-    @Builder.Default
-    private ClientCacheStatusPacket cachePacket = PlayerRewriteUtils.defaultCachePacket;
+    private int maxChunkRadius;
+    @Setter
+    private boolean cacheSupported;
 
     private final boolean shouldSendCertificateChain;
 

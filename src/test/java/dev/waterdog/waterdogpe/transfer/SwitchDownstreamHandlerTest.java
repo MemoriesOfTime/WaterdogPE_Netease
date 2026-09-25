@@ -36,6 +36,7 @@ import org.cloudburstmc.protocol.common.PacketSignal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -269,6 +270,22 @@ public class SwitchDownstreamHandlerTest {
 
         verify(this.harness.upstream, atLeastOnce()).sendPacketImmediately(isA(SetEntityDataPacket.class));
         verify(this.harness.upstream, atLeastOnce()).sendPacket(isA(UpdateClientInputLocksPacket.class));
+    }
+
+    /**
+     * The input lock anchors at the real spawn position, not the fake position the client is about to
+     * be moved to (upstream #466): anchoring at the +2000 offset the client has never been at leaves
+     * the lock referencing a position far from where the client actually is.
+     */
+    @Test
+    void freezesClientWithInputLockAnchoredAtRealSpawnPosition() {
+        StartGamePacket packet = newStartGame();
+        packet.setPlayerPosition(Vector3f.from(128, 64, -32));
+        this.handler.handle(packet);
+
+        ArgumentCaptor<UpdateClientInputLocksPacket> lock = ArgumentCaptor.forClass(UpdateClientInputLocksPacket.class);
+        verify(this.harness.upstream).sendPacket(lock.capture());
+        assertEquals(packet.getPlayerPosition(), lock.getValue().getServerPosition());
     }
 
     /**

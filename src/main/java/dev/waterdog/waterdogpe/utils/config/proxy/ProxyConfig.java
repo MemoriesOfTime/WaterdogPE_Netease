@@ -254,14 +254,6 @@ public class ProxyConfig extends YamlConfig {
     }
 
     @Override
-    protected void saveToYaml() throws InvalidConfigurationException {
-        if (this.saveComments) {
-            SettingsSection.describeSections(this);
-        }
-        super.saveToYaml();
-    }
-
-    @Override
     public void load() throws InvalidConfigurationException {
         super.load();
         // Yamler writes the file back only when a key is missing at the root, so a section that
@@ -269,6 +261,20 @@ public class ProxyConfig extends YamlConfig {
         if (SettingsSection.upgradedSections(this)) {
             this.save();
         }
+    }
+
+    @Override
+    protected void saveToYaml() throws InvalidConfigurationException {
+        // The file may come from a read-only mount, such as a Kubernetes ConfigMap. Options it does
+        // not carry keep their defaults instead of failing the startup
+        if (this.CONFIG_FILE.exists() && !this.CONFIG_FILE.canWrite()) {
+            ProxyServer.getInstance().getLogger().warning("Config file " + this.CONFIG_FILE + " is not writable, options missing from it keep their defaults");
+            return;
+        }
+        if (this.saveComments) {
+            SettingsSection.describeSections(this);
+        }
+        super.saveToYaml();
     }
 
     public int getIdleThreads() {

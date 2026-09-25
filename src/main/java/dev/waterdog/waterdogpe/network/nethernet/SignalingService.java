@@ -15,7 +15,8 @@
 
 package dev.waterdog.waterdogpe.network.nethernet;
 
-import org.cloudburstmc.netty.channel.nethernet.signaling.NetherNetServerSignaling.PongData;
+import org.cloudburstmc.netty.channel.nethernet.signaling.PongData;
+import org.cloudburstmc.netty.channel.nethernet.signaling.JoinRefusal;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.CompletableFuture;
@@ -49,5 +50,5 @@ public interface SignalingService {
     /**
      * Whether NetherNet is bound and below its connection limit.
      */
-    boolean acceptsConnections();
+    JoinRefusal acceptsConnections();
 }

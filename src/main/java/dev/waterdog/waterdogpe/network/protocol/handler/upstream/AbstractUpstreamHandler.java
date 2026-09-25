@@ -48,7 +48,7 @@ public abstract class AbstractUpstreamHandler implements BedrockPacketHandler {
 
     @Override
     public PacketSignal handle(ClientCacheStatusPacket packet) {
-        this.player.getLoginData().setCachePacket(packet);
+        this.player.getLoginData().setCacheSupported(packet.isSupported());
         return this.cancel();
     }
 
