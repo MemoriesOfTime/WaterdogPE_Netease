@@ -15,6 +15,9 @@
 
 package dev.waterdog.waterdogpe;
 
+import dev.mot.protocol.extension.packet.NetEaseAddPlayerPacket;
+import dev.mot.protocol.extension.packet.NetEaseAnimatePacket;
+import dev.mot.protocol.extension.packet.NetEaseCommandRequestPacket;
 import dev.mot.protocol.extension.packet.NetEaseContainerOpenPacket;
 import dev.mot.protocol.extension.packet.NetEasePlayerListPacket;
 import dev.mot.protocol.extension.packet.NetEaseTextPacket;
@@ -265,6 +268,12 @@ public class ProxyServer {
             ProtocolCodecs.addHandledPacket(NetEaseTextPacket.class);
             ProtocolCodecs.addHandledPacket(NetEaseContainerOpenPacket.class);
             ProtocolCodecs.addHandledPacket(NetEasePlayerListPacket.class);
+            // Aliases whose vanilla packet EntityMap rewrites (AddPlayer since extension R7,
+            // Animate/CommandRequest since 1.21.130 support): a rewritten packet is re-encoded
+            // by exact class, so its alias must survive retainPackets or the encode NPEs.
+            ProtocolCodecs.addHandledPacket(NetEaseAddPlayerPacket.class);
+            ProtocolCodecs.addHandledPacket(NetEaseAnimatePacket.class);
+            ProtocolCodecs.addHandledPacket(NetEaseCommandRequestPacket.class);
 
             for (ProtocolVersion version : ProtocolVersion.values()) {
                 version.setBedrockCodec(ProtocolCodecs.buildCodec(version.getDefaultCodec()));

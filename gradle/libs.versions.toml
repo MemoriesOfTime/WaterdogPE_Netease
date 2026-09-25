@@ -1,7 +1,7 @@
 [versions]
 raklib = "1.1.0.CR1-20260823.150315-6"
-protocol = "3.0.0.Beta13-20260921.100211-29"
-netease-protocol-extension = "1.21.124-R7"
+protocol = "3.0.0.Beta13-20260924.222318-30"
+netease-protocol-extension = "1.21.130-R1"
 log4j = "2.25.4"
 jline = "3.30.6"
 netty = "4.2.16.Final"

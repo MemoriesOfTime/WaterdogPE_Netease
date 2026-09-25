@@ -16,6 +16,7 @@
 package dev.waterdog.waterdogpe.network.protocol;
 
 import dev.mot.protocol.extension.codec.v686.Bedrock_v686_NetEase;
+import dev.mot.protocol.extension.codec.v898.Bedrock_v898_NetEase;
 import dev.mot.protocol.extension.packet.*;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
@@ -93,5 +94,36 @@ public class ProtocolCodecsRetainTest {
         assertNotNull(built.getPacketDefinition(StoreBuySuccessPacket.class));
         assertNotNull(built.getPacketDefinition(NetEaseJsonPacket.class));
         assertNotNull(built.getPacketDefinition(ConfirmSkinPacket.class));
+    }
+
+    /**
+     * Mirrors the production retain list from {@code ProxyServer.boot()} against the v898 NetEase
+     * codec (NetEase 1.21.130): every alias of a rewritten packet must stay encodable, while
+     * packets with their own NetEase id (SyncSkin et al.) stay dropped and pass through as
+     * UnknownPacket bytes.
+     */
+    @Test
+    @Order(4)
+    void productionRetainListKeepsRewrittenNetEaseAliasesEncodable() {
+        ProtocolCodecs.addHandledPacket(NetEaseContainerOpenPacket.class);
+        ProtocolCodecs.addHandledPacket(NetEasePlayerListPacket.class);
+        ProtocolCodecs.addHandledPacket(NetEaseAddPlayerPacket.class);
+        ProtocolCodecs.addHandledPacket(NetEaseAnimatePacket.class);
+        ProtocolCodecs.addHandledPacket(NetEaseCommandRequestPacket.class);
+
+        BedrockCodec built = ProtocolCodecs.buildCodec(Bedrock_v898_NetEase.CODEC);
+
+        assertNotNull(built.getPacketDefinition(NetEaseTextPacket.class));
+        assertNotNull(built.getPacketDefinition(NetEaseContainerOpenPacket.class));
+        assertNotNull(built.getPacketDefinition(NetEasePlayerListPacket.class));
+        // EntityMap rewrites AddPlayer/Animate runtime ids, so the decoded NetEase instances are
+        // re-encoded by exact class; a dropped alias definition means an NPE on encode.
+        assertNotNull(built.getPacketDefinition(NetEaseAddPlayerPacket.class));
+        assertNotNull(built.getPacketDefinition(NetEaseAnimatePacket.class));
+        assertNotNull(built.getPacketDefinition(NetEaseCommandRequestPacket.class));
+        // Own-id extension packets are deliberately NOT retained: their ids must stay
+        // UnknownPacket passthrough instead of becoming decodable. (PyRpcPacket and friends were
+        // already registered by the Order(3) test, so only SyncSkinPacket stays pristine here.)
+        assertNull(built.getPacketDefinition(SyncSkinPacket.class));
     }
 }
