@@ -45,10 +45,15 @@ public class RewriteData {
     @Getter
     private long entityId;
     /**
-     * The downstream-known entityId
+     * The downstream-known runtime entityId
      */
     @Getter
-    private long originalEntityId;
+    private long originalRuntimeEntityId;
+    /**
+     * The downstream-known unique entityId, BDS keeps it apart from the runtime one
+     */
+    @Getter
+    private long originalUniqueEntityId;
 
     @Getter
     private BlockPalette blockPalette;
@@ -84,6 +89,16 @@ public class RewriteData {
     private Vector3f spawnPosition;
     @Getter
     private Vector2f rotation;
+    /**
+     * Whether the client is on the death screen of the current server
+     */
+    @Getter
+    private volatile boolean dead;
+    /**
+     * Set while the client answers a death screen the proxy ended during a transfer
+     */
+    @Getter
+    private volatile boolean proxyRespawn;
     /**
      * Server known value of immobile flag
      * Actually applied value may be different during server transfer
@@ -135,11 +150,38 @@ public class RewriteData {
     }
 
     public PacketSignal rewriteEntityId(long from, LongConsumer setter) {
-        long rewriteId = PlayerRewriteUtils.rewriteId(from, getEntityId(), getOriginalEntityId());
+        return rewrite(from, PlayerRewriteUtils.rewriteId(from, getEntityId(), getOriginalRuntimeEntityId()), setter);
+    }
+
+    public PacketSignal rewriteUniqueEntityId(long from, LongConsumer setter) {
+        return rewrite(from, this.rewriteUniqueId(from), setter);
+    }
+
+    public long rewriteUniqueId(long from) {
+        return PlayerRewriteUtils.rewriteId(from, getEntityId(), getOriginalUniqueEntityId());
+    }
+
+    private static PacketSignal rewrite(long from, long rewriteId, LongConsumer setter) {
         if (rewriteId == from) {
             return PacketSignal.UNHANDLED;
         }
         setter.accept(rewriteId);
         return PacketSignal.HANDLED;
+    }
+
+    /**
+     * @deprecated use {@link #setOriginalRuntimeEntityId(long)}
+     */
+    @Deprecated
+    public void setOriginalEntityId(long originalRuntimeEntityId) {
+        this.originalRuntimeEntityId = originalRuntimeEntityId;
+    }
+
+    /**
+     * @deprecated use {@link #getOriginalRuntimeEntityId()}
+     */
+    @Deprecated
+    public long getOriginalEntityId() {
+        return originalRuntimeEntityId;
     }
 }

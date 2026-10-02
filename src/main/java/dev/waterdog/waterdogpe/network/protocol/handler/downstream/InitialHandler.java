@@ -20,7 +20,6 @@ import dev.mot.protocol.extension.BedrockCryptoUtils;
 import dev.waterdog.waterdogpe.event.defaults.InitialServerConnectedEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
-import org.cloudburstmc.protocol.bedrock.data.ServerConfigurationJoinInfo;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.network.protocol.Signals;
 import dev.waterdog.waterdogpe.network.protocol.registry.FakeDefinitionRegistry;
@@ -113,7 +112,8 @@ public class InitialHandler extends AbstractDownstreamHandler {
     @Override
     public final PacketSignal handle(StartGamePacket packet) {
         RewriteData rewriteData = this.player.getRewriteData();
-        rewriteData.setOriginalEntityId(packet.getRuntimeEntityId());
+        rewriteData.setOriginalRuntimeEntityId(packet.getRuntimeEntityId());
+        rewriteData.setOriginalUniqueEntityId(packet.getUniqueEntityId());
         if (this.player.isNetEaseClient()) {
             // 网易客户端直接使用 RuntimeEntityId，保持 playerId = uid
             rewriteData.setEntityId(packet.getRuntimeEntityId());

@@ -123,18 +123,6 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
     @Override
     public final PacketSignal handle(StartGamePacket packet) {
         RewriteData rewriteData = this.player.getRewriteData();
-        rewriteData.setOriginalEntityId(packet.getRuntimeEntityId());
-        rewriteData.setGameRules(packet.getGamerules());
-        rewriteData.setSpawnPosition(packet.getPlayerPosition());
-        rewriteData.setRotation(packet.getRotation());
-
-        if (this.player.getProtocol().isBeforeOrEqual(ProtocolVersion.MINECRAFT_PE_1_16_20)) {
-            BlockPalette palette = BlockPalette.getPalette(packet.getBlockPalette(), this.player.getProtocol());
-            rewriteData.setBlockPaletteRewrite(palette.createRewrite(rewriteData.getBlockPalette()));
-        } else {
-            rewriteData.setBlockProperties(packet.getBlockProperties());
-        }
-
         if (!this.player.isConnected()) {
             this.connection.disconnect();
             this.player.disconnect("transfer disconnected");
@@ -184,8 +172,32 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
         this.player.setDownstreamConnection(this.connection);
         this.connection.getServerInfo().addConnection(this.connection);
 
+        // Only after the switch, so the old server's packets are never rewritten with this server's data
+        rewriteData.setOriginalRuntimeEntityId(packet.getRuntimeEntityId());
+        rewriteData.setOriginalUniqueEntityId(packet.getUniqueEntityId());
+        rewriteData.setGameRules(packet.getGamerules());
+        rewriteData.setSpawnPosition(packet.getPlayerPosition());
+        rewriteData.setRotation(packet.getRotation());
+
+        if (this.player.getProtocol().isBeforeOrEqual(ProtocolVersion.MINECRAFT_PE_1_16_20)) {
+            BlockPalette palette = BlockPalette.getPalette(packet.getBlockPalette(), this.player.getProtocol());
+            rewriteData.setBlockPaletteRewrite(palette.createRewrite(rewriteData.getBlockPalette()));
+        } else {
+            rewriteData.setBlockProperties(packet.getBlockProperties());
+        }
+
         ServerTransferEvent event = new ServerTransferEvent(this.player, oldConnection.getServerInfo(), this.connection.getServerInfo());
         this.player.getProxy().getEventManager().callEvent(event);
+
+        // Only the new server may keep the player frozen once the transfer ends
+        rewriteData.setImmobileFlag(false);
+
+        // The old server can no longer end its death screen, the new one spawns the player as usual
+        if (rewriteData.isDead()) {
+            rewriteData.setDead(false);
+            rewriteData.setProxyRespawn(true);
+            injectRespawn(this.player.getConnection(), packet.getPlayerPosition(), rewriteData.getEntityId());
+        }
 
         LongSet blobs = this.player.getChunkBlobs();
         if (this.player.getProtocol().isBefore(ProtocolVersion.MINECRAFT_PE_1_18_30) &&

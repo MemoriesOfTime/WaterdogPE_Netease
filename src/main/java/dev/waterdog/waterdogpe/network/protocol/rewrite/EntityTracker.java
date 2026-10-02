@@ -15,7 +15,6 @@
 
 package dev.waterdog.waterdogpe.network.protocol.rewrite;
 import dev.waterdog.waterdogpe.network.protocol.PacketUtils;
-import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import org.cloudburstmc.protocol.bedrock.data.HudVisibility;
 import org.cloudburstmc.protocol.bedrock.data.ScoreInfo;
@@ -148,15 +147,6 @@ public class EntityTracker implements BedrockPacketHandler {
         } else {
             this.player.getEntityLinks().put(entityLink.getFrom(), entityLink.getTo());
         }
-    }
-
-    @Override
-    public PacketSignal handle(SetEntityDataPacket packet) {
-        if (packet.getRuntimeEntityId() == this.player.getRewriteData().getOriginalEntityId()) {
-            boolean immobile = PlayerRewriteUtils.checkForImmobileFlag(packet.getMetadata());
-            this.player.getRewriteData().setImmobileFlag(immobile);
-        }
-        return PacketSignal.UNHANDLED;
     }
 
     @Override

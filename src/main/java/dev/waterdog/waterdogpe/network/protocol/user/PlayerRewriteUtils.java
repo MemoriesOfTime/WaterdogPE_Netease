@@ -29,6 +29,7 @@ import org.cloudburstmc.math.vector.Vector3i;
 import org.cloudburstmc.protocol.bedrock.data.*;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataMap;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
+import org.cloudburstmc.protocol.bedrock.data.entity.EntityEventType;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityFlag;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityLinkData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerType;
@@ -347,6 +348,27 @@ public class PlayerRewriteUtils {
         session.sendPacketImmediately(packet);
     }
 
+    public static void injectRespawn(ProxiedConnection session, Vector3f position, long runtimeId) {
+        if (session == null || !session.isConnected()) {
+            return;
+        }
+        RespawnPacket packet = new RespawnPacket();
+        packet.setPosition(position);
+        packet.setState(RespawnPacket.State.SERVER_READY);
+        packet.setRuntimeEntityId(runtimeId);
+        session.sendPacketImmediately(packet);
+    }
+
+    public static void injectRespawnFinished(ProxiedConnection session, long runtimeId) {
+        if (session == null || !session.isConnected()) {
+            return;
+        }
+        EntityEventPacket packet = new EntityEventPacket();
+        packet.setRuntimeEntityId(runtimeId);
+        packet.setType(EntityEventType.RESPAWN);
+        session.sendPacketImmediately(packet);
+    }
+
     public static void injectDimensionChange(ProxiedConnection session, int dimensionId, Vector3f position, long runtimeId, ProtocolVersion version, boolean chunks, boolean requestSubChunks) {
         if (session == null || !session.isConnected()) {
             return;
@@ -356,6 +378,8 @@ public class PlayerRewriteUtils {
         packet.setRespawn(true);
         packet.setDimension(dimensionId);
         session.sendPacketImmediately(packet);
+        // The client plays the portal sound on dimension changes
+        injectStopAllSounds(session);
 
         if (chunks) {
             injectChunkPublisherUpdate(session, position.toInt(), 3);
@@ -373,6 +397,16 @@ public class PlayerRewriteUtils {
             actionPacket.setFace(0);
             session.sendPacketImmediately(actionPacket);
         }
+    }
+
+    public static void injectStopAllSounds(ProxiedConnection session) {
+        if (session == null || !session.isConnected()) {
+            return;
+        }
+        StopSoundPacket packet = new StopSoundPacket();
+        packet.setSoundName("*");
+        packet.setStoppingAllSound(true);
+        session.sendPacketImmediately(packet);
     }
 
     public static void injectEmptyChunks(ProxiedConnection session, Vector3f spawnPosition, int radius, int dimension, ProtocolVersion version, boolean requestSubChunks) {

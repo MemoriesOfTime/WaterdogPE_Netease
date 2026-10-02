@@ -24,15 +24,20 @@ import dev.waterdog.waterdogpe.network.protocol.handler.ProxyPacketHandler;
 import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
 import dev.waterdog.waterdogpe.network.protocol.registry.FakeDefinitionRegistry;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.RewriteMaps;
+import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
+import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
+import org.cloudburstmc.protocol.bedrock.data.AttributeData;
 import org.cloudburstmc.protocol.bedrock.data.camera.CameraPreset;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandData;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandEnumConstraint;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandEnumData;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
 import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleNamedDefinition;
+import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataMap;
+import org.cloudburstmc.protocol.bedrock.data.entity.EntityFlag;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.common.NamedDefinition;
@@ -62,6 +67,67 @@ public abstract class AbstractDownstreamHandler implements ProxyPacketHandler {
         TransferCallback transferCallback = player.getRewriteData().getTransferCallback();
         if (transferCallback != null && transferCallback.getConnection() == this.connection) {
             transferCallback.onPlayStatus();
+        }
+        return PacketSignal.UNHANDLED;
+    }
+
+    @Override
+    public PacketSignal handle(UpdateAttributesPacket packet) {
+        if (packet.getRuntimeEntityId() != this.player.getRewriteData().getOriginalRuntimeEntityId()) {
+            return PacketSignal.UNHANDLED;
+        }
+        for (AttributeData attribute : packet.getAttributes()) {
+            if (attribute.getName().equals("minecraft:health")) {
+                this.trackDeath(attribute.getValue() <= 0);
+            }
+        }
+        return PacketSignal.UNHANDLED;
+    }
+
+    @Override
+    public PacketSignal handle(SetHealthPacket packet) {
+        // BDS and PowerNukkitX send this on every spawn and respawn
+        this.trackDeath(packet.getHealth() <= 0);
+        return PacketSignal.UNHANDLED;
+    }
+
+    @Override
+    public PacketSignal handle(RespawnPacket packet) {
+        // Geyser only sends health 0, a Nukkit kill() only SERVER_SEARCHING
+        if (packet.getState() == RespawnPacket.State.SERVER_SEARCHING) {
+            this.trackDeath(true);
+        } else if (packet.getState() == RespawnPacket.State.SERVER_READY) {
+            this.trackDeath(false);
+            // BDS and Geyser put a placeholder in StartGame, the real spawn only comes with the join handshake
+            TransferCallback transferCallback = this.player.getRewriteData().getTransferCallback();
+            if (transferCallback != null && transferCallback.getConnection() == this.connection) {
+                this.player.getRewriteData().setSpawnPosition(packet.getPosition());
+            }
+        }
+        return PacketSignal.UNHANDLED;
+    }
+
+    private void trackDeath(boolean dead) {
+        if (this.connection != this.player.getDownstreamConnection()) {
+            return;
+        }
+        RewriteData rewriteData = this.player.getRewriteData();
+        rewriteData.setDead(dead);
+        // A new death once the transfer settled outdates a respawn the proxy started
+        if (dead && rewriteData.getTransferCallback() == null) {
+            rewriteData.setProxyRespawn(false);
+        }
+    }
+
+    @Override
+    public PacketSignal handle(SetEntityDataPacket packet) {
+        RewriteData rewriteData = this.player.getRewriteData();
+        EntityDataMap metadata = packet.getMetadata();
+        // Only what reaches the client counts, and a packet without flags keeps the last value
+        if (this.connection == this.player.getDownstreamConnection()
+                && packet.getRuntimeEntityId() == rewriteData.getOriginalRuntimeEntityId()
+                && metadata.isFlagPresent(EntityFlag.NO_AI)) {
+            rewriteData.setImmobileFlag(PlayerRewriteUtils.checkForImmobileFlag(metadata));
         }
         return PacketSignal.UNHANDLED;
     }

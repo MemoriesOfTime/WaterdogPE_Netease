@@ -65,6 +65,7 @@ public class ProtocolCodecs {
         HANDLED_PACKETS.add(EntityEventPacket.class);
         HANDLED_PACKETS.add(MobEffectPacket.class);
         HANDLED_PACKETS.add(UpdateAttributesPacket.class);
+        HANDLED_PACKETS.add(SetHealthPacket.class);
         HANDLED_PACKETS.add(MobEquipmentPacket.class);
         HANDLED_PACKETS.add(MobArmorEquipmentPacket.class);
         HANDLED_PACKETS.add(InteractPacket.class);
@@ -84,6 +85,7 @@ public class ProtocolCodecs {
         HANDLED_PACKETS.add(RequestChunkRadiusPacket.class);
         HANDLED_PACKETS.add(GameRulesChangedPacket.class);
         HANDLED_PACKETS.add(BossEventPacket.class);
+        HANDLED_PACKETS.add(ShowCreditsPacket.class);
         HANDLED_PACKETS.add(CommandRequestPacket.class);
         HANDLED_PACKETS.add(UpdateTradePacket.class);
         HANDLED_PACKETS.add(TransferPacket.class);

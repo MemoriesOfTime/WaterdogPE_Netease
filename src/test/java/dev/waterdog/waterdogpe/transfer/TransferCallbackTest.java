@@ -20,10 +20,13 @@ import dev.waterdog.waterdogpe.event.defaults.ServerTransferFailedEvent;
 import dev.waterdog.waterdogpe.network.connection.client.ClientConnection;
 import dev.waterdog.waterdogpe.network.connection.handler.ReconnectReason;
 import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
+import dev.waterdog.waterdogpe.network.protocol.handler.downstream.ConnectedDownstreamHandler;
+import dev.waterdog.waterdogpe.network.protocol.handler.downstream.SwitchDownstreamHandler;
 import dev.waterdog.waterdogpe.network.serverinfo.ServerInfo;
 import org.cloudburstmc.math.vector.Vector2f;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.packet.MovePlayerPacket;
+import org.cloudburstmc.protocol.bedrock.packet.RespawnPacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetLocalPlayerAsInitializedPacket;
 import org.cloudburstmc.protocol.bedrock.packet.UpdateClientInputLocksPacket;
 import org.junit.jupiter.api.AfterEach;
@@ -37,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
@@ -160,6 +164,47 @@ public class TransferCallbackTest {
 
         verify(this.targetConnection, never()).sendPacket(isA(SetLocalPlayerAsInitializedPacket.class));
         assertTrue(this.harness.events(PostTransferCompleteEvent.class).isEmpty());
+    }
+
+    // master 的 phaseOneInputLockUsesSpawnPosition 在此被有意丢弃：netease 把冻结（immobile +
+    // input lock）的注入从阶段一提前到了 StartGame 时刻（见 SwitchDownstreamHandler 的 fastTransfer
+    // 路径），等价断言由 SwitchDownstreamHandlerTest.freezesClientWithInputLockAnchoredAtRealSpawnPosition 覆盖。
+
+    private static RespawnPacket serverReady(Vector3f position) {
+        RespawnPacket packet = new RespawnPacket();
+        packet.setState(RespawnPacket.State.SERVER_READY);
+        packet.setPosition(position);
+        return packet;
+    }
+
+    @Test
+    void phaseTwoTeleportsToTheSpawnFromServerReady() {
+        // A BDS world set to find a safe spawn only has a placeholder height in StartGame
+        this.harness.player.getRewriteData().setSpawnPosition(Vector3f.from(0.5f, 32769.62f, 0.5f));
+        this.harness.player.getRewriteData().setRotation(Vector2f.ZERO);
+        Vector3f spawn = Vector3f.from(0.5f, 71.62f, 0.5f);
+        new SwitchDownstreamHandler(this.harness.player, this.targetConnection).handle(serverReady(spawn));
+
+        setPhase(TransferCallback.TransferPhase.PHASE_2);
+        this.callback.onDimChangeSuccess();
+
+        verify(this.harness.upstream).sendPacketImmediately(argThat(packet -> packet instanceof MovePlayerPacket move
+                && move.getPosition().equals(spawn)));
+    }
+
+    @Test
+    void onlyTheTransferTargetMovesTheSpawn() {
+        Vector3f spawn = Vector3f.from(128, 64, -32);
+        this.harness.player.getRewriteData().setSpawnPosition(spawn);
+
+        ClientConnection lobby = this.harness.newDownstream(this.sourceServer);
+        new ConnectedDownstreamHandler(this.harness.player, lobby).handle(serverReady(Vector3f.ZERO));
+        assertEquals(spawn, this.harness.player.getRewriteData().getSpawnPosition());
+
+        // A respawn after the transfer settled has no transfer left to place
+        this.harness.player.getRewriteData().clearTransferCallback(this.callback);
+        new ConnectedDownstreamHandler(this.harness.player, this.targetConnection).handle(serverReady(Vector3f.ZERO));
+        assertEquals(spawn, this.harness.player.getRewriteData().getSpawnPosition());
     }
 
     @Test

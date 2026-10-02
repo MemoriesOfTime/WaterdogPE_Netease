@@ -21,6 +21,7 @@ import dev.waterdog.waterdogpe.network.connection.codec.compression.CompressionT
 import dev.waterdog.waterdogpe.network.connection.codec.compression.ProxiedCompressionCodec;
 import dev.waterdog.waterdogpe.network.connection.codec.initializer.ProxiedSessionInitializer;
 import dev.waterdog.waterdogpe.network.connection.codec.packet.BedrockPacketCodec;
+import dev.waterdog.waterdogpe.network.protocol.PacketUtils;
 import dev.waterdog.waterdogpe.network.protocol.ProtocolVersion;
 import dev.waterdog.waterdogpe.network.protocol.handler.ProxyBatchBridge;
 import dev.waterdog.waterdogpe.network.protocol.handler.ProxyPacketHandler;
@@ -155,6 +156,7 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
     @Override
     public void sendPacket(BedrockPacket packet) {
         Objects.requireNonNull(packet, "packet");
+        PacketUtils.traceSentToServer(this.getServerInfo(), packet);
         this.executeOnEventLoop(() -> {
             if (!this.canSend()) {
                 return;
@@ -167,6 +169,7 @@ public class BedrockClientConnection extends SimpleChannelInboundHandler<Bedrock
     @Override
     public void sendPacketImmediately(BedrockPacket packet) {
         Objects.requireNonNull(packet, "packet");
+        PacketUtils.traceSentToServer(this.getServerInfo(), packet);
         this.executeOnEventLoop(() -> {
             if (!this.canSend()) {
                 return;
