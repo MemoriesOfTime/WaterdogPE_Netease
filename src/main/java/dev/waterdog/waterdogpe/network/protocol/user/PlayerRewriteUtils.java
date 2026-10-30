@@ -27,11 +27,7 @@ import org.cloudburstmc.math.vector.Vector2f;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.math.vector.Vector3i;
 import org.cloudburstmc.protocol.bedrock.data.*;
-import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataMap;
-import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
-import org.cloudburstmc.protocol.bedrock.data.entity.EntityEventType;
-import org.cloudburstmc.protocol.bedrock.data.entity.EntityFlag;
-import org.cloudburstmc.protocol.bedrock.data.entity.EntityLinkData;
+import org.cloudburstmc.protocol.bedrock.data.entity.*;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerType;
 import org.cloudburstmc.protocol.bedrock.netty.BedrockBatchWrapper;
 import org.cloudburstmc.protocol.bedrock.packet.*;
@@ -60,6 +56,10 @@ public class PlayerRewriteUtils {
     private static final ByteBuf fakeChunkDataOverworld;
     private static final ByteBuf fakeChunkDataNether;
     private static final ByteBuf fakeChunkDataEnd;
+    // Request-mode LevelChunk payloads carry biomes only. Block sections arrive as sub-chunk responses.
+    private static final ByteBuf fakeBiomeDataOverworld;
+    private static final ByteBuf fakeBiomeDataNether;
+    private static final ByteBuf fakeBiomeDataEnd;
     private static final ByteBuf emptyChunkRaw;
     // 16x16 zeroed height map (byte per column)
     private static final ByteBuf emptyHeightMapData;
@@ -75,6 +75,9 @@ public class PlayerRewriteUtils {
         fakeChunkDataOverworld = createChunkData(1, 24);
         fakeChunkDataNether = createChunkData(1, 8);
         fakeChunkDataEnd = createChunkData(1, 16);
+        fakeBiomeDataOverworld = createBiomeData(24);
+        fakeBiomeDataNether = createBiomeData(8);
+        fakeBiomeDataEnd = createBiomeData(16);
         emptyChunkRaw = createChunkDataRaw();
         emptyHeightMapData = Unpooled.directBuffer(256).writeZero(256).asReadOnly();
     }
@@ -94,13 +97,40 @@ public class PlayerRewriteUtils {
             // writePalette(buffer, 0); AIR in palette
         }
         // buffer.writeZero(512); // map height - ??
-        // paletted biomes - 1.18
+        writeBiomes(buffer, biomeSections);
+        return buffer.asReadOnly();
+    }
+
+    private static ByteBuf createBiomeData(int biomeSections) {
+        final ByteBuf buffer = Unpooled.buffer();
+        writeBiomes(buffer, biomeSections);
+        return buffer.asReadOnly();
+    }
+
+    /**
+     * Writes the paletted biomes of a chunk payload (1.18+), terminated by the border block byte.
+     * The first section carries a 1 bit per value runtime palette, every following section links back
+     * to it, and the whole blob is closed by a zero border byte. Both the full fake chunk and the
+     * request-mode payload must use this exact layout, so it lives in one place.
+     */
+    private static void writeBiomes(ByteBuf buffer, int biomeSections) {
         writePalette(buffer, 0);
         for (int i = 1; i < biomeSections; i++) {
             buffer.writeByte((127 << 1) | 1); // link to previous biome palette
         }
         buffer.writeByte(0); // Borders
-        return buffer.asReadOnly();
+    }
+
+    /**
+     * @return shared, read only biome payload for the given dimension. Callers must
+     * {@link ByteBuf#retainedSlice()} before handing it to a reference counted packet.
+     */
+    private static ByteBuf biomeDataFor(int dimension) {
+        return switch (dimension) {
+            case DIMENSION_NETHER -> fakeBiomeDataNether;
+            case DIMENSION_END -> fakeBiomeDataEnd;
+            default -> fakeBiomeDataOverworld;
+        };
     }
 
     private static void writePalette(ByteBuf buffer, int runtimeId) {
@@ -441,7 +471,11 @@ public class PlayerRewriteUtils {
                 case DIMENSION_END -> 15;
                 default -> 23;
             });
-            packet.setData(Unpooled.EMPTY_BUFFER);
+            // A request mode payload carries biomes only, block sections are requested separately.
+            // Sending an empty blob leaves the client without any biome storage for the chunk and
+            // LevelChunk::getBiome asserts on it ("We must have at least one subchunk's worth of
+            // biome data to ask for biome data"), which hard crashes NetEase 3.10 during transfers.
+            packet.setData(biomeDataFor(dimension).retainedSlice());
         } else if (version.isAfterOrEqual(ProtocolVersion.MINECRAFT_PE_1_18_30)) {
             packet.setSubChunksLength(1);
             switch (dimension) {
