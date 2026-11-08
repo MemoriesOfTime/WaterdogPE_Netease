@@ -78,8 +78,9 @@ public class SignalingSettings extends SettingsSection {
             "port uses webrtc_port. A host name is looked up when signaling starts, which fails if it",
             "does not resolve. An address this machine does not hold is announced as the public side of",
             "a NAT forwarding that port here. Media bypasses a signaling reverse proxy, so its address",
-            "only belongs here if it forwards the media port too. Empty derives them from the listener",
-            "bind address, or from this host's addresses and what stun_discovery finds."
+            "only belongs here if it forwards the media port too. With network_settings.webrtc_proxy_protocol_relays",
+            "set, name the relays here. Empty derives them from the listener bind address, or from this",
+            "host's addresses and what stun_discovery finds."
     })
     @Setter
     private List<String> advertiseAddresses = new ArrayList<>();
@@ -98,7 +99,9 @@ public class SignalingSettings extends SettingsSection {
             "Reverse proxies, such as an HTTP load balancer, whose X-Forwarded-For header built-in signaling",
             "trusts for the player's address, as hosts or CIDR ranges such as 10.0.0.0/8. An http or https",
             "entry is fetched and read as one address per line. Built-in signaling also lifts its per-address",
-            "connection limit for them. PROXY protocol proxies go in network_settings.proxy_protocol_whitelisted_ips."
+            "connection limit for them. PROXY protocol proxies go in network_settings.proxy_protocol_whitelisted_ips.",
+            "With more than one proxy in front of signaling, such as a CDN in front of nginx, list every one of",
+            "them, or have the last one send only the player's address in X-Forwarded-For."
     })
     private List<String> trustedProxies = new ArrayList<>();
 

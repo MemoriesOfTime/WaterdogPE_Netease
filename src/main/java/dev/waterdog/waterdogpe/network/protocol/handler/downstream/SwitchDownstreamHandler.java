@@ -30,6 +30,7 @@ import dev.waterdog.waterdogpe.player.ProxiedPlayer;
 import dev.waterdog.waterdogpe.utils.types.TranslationContainer;
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.longs.Long2IntMap;
 import it.unimi.dsi.fastutil.longs.Long2LongMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.LongSet;
@@ -235,6 +236,10 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
             injectRemoveVolumeEntity(this.player.getConnection(), entry.getIntKey(), entry.getIntValue());
         }
         volumeEntities.clear();
+
+        Long2IntMap debugShapes = this.player.getDebugShapes();
+        injectRemoveDebugShapes(this.player.getConnection(), debugShapes);
+        debugShapes.clear();
 
         if (this.player.isFogApplied()) {
             injectClearFog(this.player.getConnection());

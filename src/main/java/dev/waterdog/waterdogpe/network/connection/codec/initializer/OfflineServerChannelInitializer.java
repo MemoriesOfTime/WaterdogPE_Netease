@@ -30,10 +30,12 @@ import org.cloudburstmc.netty.util.nethernet.IpRangeSet;
 
 public class OfflineServerChannelInitializer extends ChannelInitializer<Channel> {
     private final ProxyServer proxy;
+    private final boolean proxied;
     private final IpRangeSet proxies;
 
     public OfflineServerChannelInitializer(ProxyServer proxy) {
         this.proxy = proxy;
+        this.proxied = proxy.getNetworkSettings().proxyProtocol();
         // Here rather than on the event loop, as parsing may fetch a URL
         this.proxies = proxy.getProxyProtocolProxies();
     }
@@ -42,7 +44,7 @@ public class OfflineServerChannelInitializer extends ChannelInitializer<Channel>
     protected void initChannel(Channel channel) {
         channel.pipeline().replace(RakServerOfflineHandler.NAME, RakServerOfflineHandler.NAME, new WdpeRakServerOfflineHandler((RakServerChannel) channel));
         channel.pipeline()
-                .addFirst(ServerDatagramHandler.NAME, new ServerDatagramHandler(this.proxy, this.proxies))
+                .addFirst(ServerDatagramHandler.NAME, new ServerDatagramHandler(this.proxy, this.proxied, this.proxies))
                 .addAfter(RakServerOfflineHandler.NAME, RakNetPingHandler.NAME, new RakNetPingHandler(this.proxy));
         if (this.proxy.getQueryHandler() != null) {
             channel.pipeline().addAfter(UnconnectedPongEncoder.NAME, QueryHandler.NAME, this.proxy.getQueryHandler());
