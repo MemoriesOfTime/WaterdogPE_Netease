@@ -238,7 +238,11 @@ public class SwitchDownstreamHandler extends AbstractDownstreamHandler {
         volumeEntities.clear();
 
         Long2IntMap debugShapes = this.player.getDebugShapes();
-        injectRemoveDebugShapes(this.player.getConnection(), debugShapes);
+        // ea26e46 sends a DebugDrawer removal in this window. NetEase 3.10 stalls and can
+        // crash on that packet; d10f827 did not send it. Drop the tracked ids without encoding.
+        if (!this.player.isNetEaseClient()) {
+            injectRemoveDebugShapes(this.player.getConnection(), debugShapes);
+        }
         debugShapes.clear();
 
         if (this.player.isFogApplied()) {
