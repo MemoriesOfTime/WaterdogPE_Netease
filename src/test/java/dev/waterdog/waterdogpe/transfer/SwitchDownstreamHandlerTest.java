@@ -24,10 +24,12 @@ import dev.waterdog.waterdogpe.network.protocol.handler.TransferCallback;
 import dev.waterdog.waterdogpe.network.protocol.handler.downstream.SwitchDownstreamHandler;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.RewriteData;
 import dev.waterdog.waterdogpe.network.protocol.rewrite.types.StartGameSettings;
+import dev.waterdog.waterdogpe.network.protocol.user.PlayerRewriteUtils;
 import org.cloudburstmc.math.vector.Vector2f;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.data.AuthoritativeMovementMode;
 import org.cloudburstmc.protocol.bedrock.data.GameType;
+import org.cloudburstmc.protocol.bedrock.data.entity.EntityFlag;
 import org.cloudburstmc.protocol.bedrock.packet.DisconnectPacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetEntityDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.StartGamePacket;
@@ -38,6 +40,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -323,5 +327,33 @@ public class SwitchDownstreamHandlerTest {
         assertEquals(Boolean.FALSE, TransferTestHarness.getField(callback, "freezeInjected"),
                 "cross-dimension transfer must not inject the early freeze");
         verify(this.harness.upstream, never()).sendPacket(isA(UpdateClientInputLocksPacket.class));
+    }
+
+    /**
+     * The regression this guards: StartGame flags the player's own entity as sleeping to force its inventory
+     * window shut, and only that client ever receives the flag. A real cross-dimension transfer (leaving the
+     * End or the Nether for an overworld spawn) never injects the transfer freeze, so the flag has to be cleared
+     * on its own or the client keeps rendering itself lying down while everyone else sees it standing.
+     */
+    @Test
+    void wakesClientAfterRealCrossDimensionTransfer() {
+        RewriteData rewriteData = this.harness.player.getRewriteData();
+        rewriteData.setDimension(PlayerRewriteUtils.DIMENSION_END);
+        StartGamePacket packet = newStartGame(); // determineDimensionId(2, 0) = 0 = StartGame dimension -> not fastTransfer
+        this.handler.handle(packet);
+
+        TransferCallback callback = rewriteData.getTransferCallback();
+        assertNotNull(callback, "transfer slot should be claimed");
+        assertEquals(Boolean.FALSE, TransferTestHarness.getField(callback, "freezeInjected"));
+
+        callback.onDimChangeSuccess(); // the client confirms the injected dimension change
+
+        ArgumentCaptor<SetEntityDataPacket> data = ArgumentCaptor.forClass(SetEntityDataPacket.class);
+        verify(this.harness.upstream, atLeast(2)).sendPacketImmediately(data.capture());
+        List<SetEntityDataPacket> packets = data.getAllValues();
+        assertEquals(Boolean.TRUE, packets.get(0).getMetadata().getFlags().get(EntityFlag.SLEEPING),
+                "the inventory window is closed by flagging the player as sleeping first");
+        assertEquals(Boolean.FALSE, packets.get(packets.size() - 1).getMetadata().getFlags().get(EntityFlag.SLEEPING),
+                "the sleeping flag must be cleared once the transfer settles");
     }
 }
