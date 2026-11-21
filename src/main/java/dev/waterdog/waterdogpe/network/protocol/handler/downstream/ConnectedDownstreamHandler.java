@@ -73,6 +73,10 @@ public class ConnectedDownstreamHandler extends AbstractDownstreamHandler {
         if (serverInfo == null) {
             serverInfo = this.player.getProxy().getServerInfo(packet.getAddress(), packet.getPort());
         }
+        if (serverInfo == null) {
+            this.player.getLogger().warning("[{}] TransferPacket to {}:{} matched no downstream server; the player will leave the proxy",
+                    this.player.getName(), packet.getAddress(), packet.getPort());
+        }
 
         FastTransferRequestEvent event = new FastTransferRequestEvent(serverInfo, this.player, packet.getAddress(), packet.getPort());
         this.player.getProxy().getEventManager().callEvent(event);

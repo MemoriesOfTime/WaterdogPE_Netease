@@ -69,6 +69,9 @@ public abstract class ServerInfo {
     // Last successfully resolved connect target. Never null: seeded with the configured address so behavior
     // never regresses below the old "resolve inline" path even if DNS is down at startup.
     private volatile InetSocketAddress resolvedAddress;
+    // Resolved form of publicAddress (config addresses are unresolved since #376). Maintained by the same
+    // async refresh cycle as resolvedAddress; read by matchAddress() without ever blocking on DNS.
+    private volatile InetAddress resolvedPublicAddress;
     private volatile long resolvedAt;
     private final AtomicBoolean resolving = new AtomicBoolean(false);
 
@@ -86,6 +89,7 @@ public abstract class ServerInfo {
         // Seed the cache. Done synchronously here (constructed at startup/config-load, never on an event loop)
         // so the very first connect already has a resolved address and Netty never resolves inline.
         this.resolvedAddress = address;
+        this.resolvedPublicAddress = this.publicAddress.getAddress(); // null while unresolved
         this.refreshResolvedAddress();
     }
 
@@ -126,6 +130,12 @@ public abstract class ServerInfo {
         } finally {
             this.resolvedAt = System.currentTimeMillis();
         }
+        // Independent try-block: a public_address resolution failure must not affect the connect
+        // target above. Keeps the previous value (or null) and retries on the next TTL refresh.
+        try {
+            this.resolvedPublicAddress = InetAddress.getByName(this.publicAddress.getHostString());
+        } catch (UnknownHostException ignored) {
+        }
     }
 
     public abstract ServerInfoType getServerType();
@@ -136,6 +146,14 @@ public abstract class ServerInfo {
         boolean addressMatch;
         if (inetAddress == null) {
             addressMatch = (this.publicAddress.getHostString().equals(address) || this.publicAddress.getHostName().equals(address));
+            if (!addressMatch) {
+                // Config addresses are unresolved since #376, but downstream plugins calling
+                // Player#transfer(InetSocketAddress) put the resolved IPv4 literal in TransferPacket
+                // (the case #190's getHostAddress() comparison used to cover). Compare against the
+                // asynchronously resolved public address; read-only, never blocks the event loop.
+                InetAddress resolved = this.resolvedPublicAddress;
+                addressMatch = resolved != null && resolved.getHostAddress().equals(address);
+            }
         } else {
             addressMatch = (inetAddress.getHostAddress().equals(address) || inetAddress.getHostName().equals(address));
         }
