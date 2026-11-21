@@ -572,10 +572,22 @@ public class PlayerRewriteUtils {
             return;
         }
         // The client closes every open inventory, including its own window which ContainerClosePacket can not close,
-        // when the SLEEPING flag is set. Cleared again by injectEntityImmobile once the transfer settles.
+        // when the SLEEPING flag is set. Cleared again by injectWakeClient once the transfer settles.
         SetEntityDataPacket packet = new SetEntityDataPacket();
         packet.setRuntimeEntityId(runtimeId);
         packet.getMetadata().setFlag(EntityFlag.SLEEPING, true);
+        session.sendPacketImmediately(packet);
+    }
+
+    public static void injectWakeClient(ProxiedConnection session, long runtimeId) {
+        if (session == null || !session.isConnected()){
+            return;
+        }
+        // Undoes injectForceCloseInventory. Only this client ever received the sleeping flag, so a leftover
+        // flag shows the player lying down in its own view while every other client sees it standing.
+        SetEntityDataPacket packet = new SetEntityDataPacket();
+        packet.setRuntimeEntityId(runtimeId);
+        packet.getMetadata().setFlag(EntityFlag.SLEEPING, false);
         session.sendPacketImmediately(packet);
     }
 

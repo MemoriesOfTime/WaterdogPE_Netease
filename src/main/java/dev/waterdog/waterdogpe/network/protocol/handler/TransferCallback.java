@@ -217,18 +217,22 @@ public class TransferCallback {
     }
 
     /**
-     * Idempotently releases the immobile flag and input lock injected at StartGame time (see
-     * {@link #markFreezeInjected()}). Called from the success path, and crucially from every failure path
-     * so a transfer that dies after StartGame never leaves the client frozen and unable to move. Guards on
-     * {@code freezeInjected} so it is a safe no-op when the freeze was never injected (StartGame-time
-     * failures before the claim, or non-fast-transfer paths) or when it already released the freeze.
+     * Undoes the client-side state injected when this transfer was claimed: the immobile flag and input lock
+     * of the transfer freeze (only present on the fake-position path, see {@link #markFreezeInjected()}) and the
+     * SLEEPING flag {@code injectForceCloseInventory} sets to force the player's own inventory window shut (present
+     * on every path). Called from the success path, and crucially from every failure path so a transfer that dies
+     * after StartGame never leaves the client frozen, unable to move, or lying down.
      */
     private void releaseTransferFreeze() {
+        RewriteData rewriteData = this.player.getRewriteData();
         if (!this.freezeInjected) {
+            // Real cross-dimension transfers never inject the freeze, but StartGame still flagged the player's own
+            // entity as sleeping. Only this client received that flag, so without the wake it keeps rendering
+            // itself lying down while every other client sees it standing.
+            injectWakeClient(this.player.getConnection(), rewriteData.getEntityId());
             return;
         }
         this.freezeInjected = false;
-        RewriteData rewriteData = this.player.getRewriteData();
         if (!rewriteData.hasImmobileFlag()) {
             injectEntityImmobile(this.player.getConnection(), rewriteData.getEntityId(), false);
         }
