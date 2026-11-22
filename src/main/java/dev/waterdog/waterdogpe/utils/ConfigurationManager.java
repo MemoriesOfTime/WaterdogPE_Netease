@@ -25,6 +25,7 @@ import dev.waterdog.waterdogpe.plugin.PluginClassLoader;
 import dev.waterdog.waterdogpe.plugin.PluginManager;
 import dev.waterdog.waterdogpe.utils.config.*;
 import dev.waterdog.waterdogpe.utils.config.proxy.ProxyConfig;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import net.cubespace.Yamler.Config.InvalidConfigurationException;
@@ -33,6 +34,8 @@ import java.io.File;
 import java.io.IOException;
 import java.util.*;
 import java.util.ServiceLoader.Provider;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Getter
@@ -44,6 +47,8 @@ public class ConfigurationManager {
 
     private final Map<String, PendingAction> pendingActions = new ConcurrentHashMap<>();
     private volatile boolean eventListenersRegistered = false;
+    @Getter(AccessLevel.NONE)
+    private long serverInfoReloadGeneration;
 
     public ConfigurationManager(ProxyServer proxy) {
         this.proxy = proxy;
@@ -83,11 +88,16 @@ public class ConfigurationManager {
 
     /**
      * Reload server list from config.yml and diff-sync with the runtime ServerInfoMap.
-     * Servers with no active players are added/removed/updated immediately.
+     * Additions and updates are published asynchronously on the resolver thread: until
+     * {@link ReloadResult#getReady()} completes, a newly added server is absent from the map and an
+     * updated one keeps answering with its previous instance. Removals are immediate.
      * Changes on servers with active players are deferred until all players leave.
+     * A newer reload supersedes the previous one: a publication it no longer owns fails with a
+     * {@link CancellationException} instead of overwriting the newer config.
      */
-    public ReloadResult reloadServerInfos(ServerInfoMap serverInfoMap) throws InvalidConfigurationException {
+    public synchronized ReloadResult reloadServerInfos(ServerInfoMap serverInfoMap) throws InvalidConfigurationException {
         this.proxyConfig.init();
+        this.serverInfoReloadGeneration++;
 
         ServerList newServerList = this.proxyConfig.getServerList();
         Set<String> newNames = newServerList.keySet();
@@ -99,6 +109,7 @@ public class ConfigurationManager {
         int updated = 0;
         List<String> pendingUpdates = new ArrayList<>();
         List<String> pendingRemovals = new ArrayList<>();
+        List<CompletableFuture<PublicationResult>> publications = new ArrayList<>();
 
         // Reconcile existing pending actions with the new config
         for (String name : new ArrayList<>(this.pendingActions.keySet())) {
@@ -137,13 +148,9 @@ public class ConfigurationManager {
         for (ServerEntry entry : newServerList.values()) {
             String name = entry.getServerName();
             if (!currentNames.contains(name)) {
-                // New server: add
-                try {
-                    serverInfoMap.put(name, serverInfoMap.fromServerEntry(entry));
-                    added++;
-                } catch (Exception e) {
-                    this.proxy.getLogger().error("Failed to create ServerInfo from " + entry, e);
-                }
+                // New server: add once its public address has resolved
+                publications.add(this.publishWhenReady(serverInfoMap, entry, null));
+                added++;
             } else {
                 // Existing server: check address change (skip if already has pending action)
                 if (this.pendingActions.containsKey(name)) {
@@ -152,13 +159,9 @@ public class ConfigurationManager {
                 ServerInfo current = serverInfoMap.get(name);
                 if (current != null && !addressEquals(current, entry)) {
                     if (current.getPlayers().isEmpty()) {
-                        // No players: replace immediately (put overwrites atomically)
-                        try {
-                            serverInfoMap.put(name, serverInfoMap.fromServerEntry(entry));
-                            updated++;
-                        } catch (Exception e) {
-                            this.proxy.getLogger().error("Failed to update ServerInfo from " + entry, e);
-                        }
+                        // Keep the current instance available until the replacement has resolved its aliases.
+                        publications.add(this.publishWhenReady(serverInfoMap, entry, current));
+                        updated++;
                     } else {
                         // Has players: defer update until players leave
                         this.pendingActions.put(name, new PendingAction(entry));
@@ -196,7 +199,10 @@ public class ConfigurationManager {
         // Notify reconnect handler to reset state
         this.proxy.getReconnectHandler().onReload();
 
-        return new ReloadResult(added, removed, updated, pendingUpdates, pendingRemovals);
+        CompletableFuture<Void> ready = new CompletableFuture<>();
+        ReloadResult result = new ReloadResult(added, removed, updated, pendingUpdates, pendingRemovals, ready);
+        this.completeWhenPublished(publications, result);
+        return result;
     }
 
     private boolean addressEquals(ServerInfo current, ServerEntry entry) {
@@ -204,7 +210,68 @@ public class ConfigurationManager {
                 && Objects.equals(current.getPublicAddress(), entry.getPublicAddress());
     }
 
-    private void registerPendingEventListeners() {
+    private CompletableFuture<PublicationResult> publishWhenReady(ServerInfoMap serverInfoMap, ServerEntry entry, ServerInfo expected) {
+        long generation = this.serverInfoReloadGeneration;
+        CompletableFuture<PublicationResult> publication = serverInfoMap.fromServerEntryAsync(entry).thenApply(serverInfo -> {
+            PublicationResult result;
+            synchronized (this) {
+                String name = entry.getServerName();
+                if (generation != this.serverInfoReloadGeneration) {
+                    throw new CancellationException("Reload for server " + name + " was superseded");
+                }
+                if (serverInfoMap.get(name) != expected) {
+                    throw new IllegalStateException("Server " + name + " changed while reload was resolving addresses");
+                }
+                if (expected != null && !expected.getPlayers().isEmpty()) {
+                    this.pendingActions.put(name, new PendingAction(entry));
+                    result = new PublicationResult(name, true);
+                } else if (expected == null) {
+                    if (serverInfoMap.putIfAbsent(name, serverInfo) != null) {
+                        throw new IllegalStateException("Server " + name + " was registered while reload was resolving addresses");
+                    }
+                    result = new PublicationResult(name, false);
+                } else {
+                    if (!serverInfoMap.replace(name, expected, serverInfo)) {
+                        throw new IllegalStateException("Server " + name + " changed while reload was publishing");
+                    }
+                    result = new PublicationResult(name, false);
+                }
+            }
+            if (result.deferred()) {
+                this.registerPendingEventListeners();
+                this.scanAndApplyPendingActions();
+            }
+            return result;
+        });
+        publication.whenComplete((result, error) -> {
+            if (error == null) {
+                return;
+            }
+            if (error instanceof CancellationException || error.getCause() instanceof CancellationException) {
+                return; // a newer reload superseded this publication
+            }
+            this.proxy.getLogger().error("Failed to publish ServerInfo from " + entry, error);
+        });
+        return publication;
+    }
+
+    private void completeWhenPublished(List<CompletableFuture<PublicationResult>> publications, ReloadResult result) {
+        CompletableFuture.allOf(publications.toArray(new CompletableFuture[0])).whenComplete((ignored, error) -> {
+            if (error != null) {
+                result.ready.completeExceptionally(error);
+                return;
+            }
+            for (CompletableFuture<PublicationResult> future : publications) {
+                PublicationResult publication = future.join();
+                if (publication.deferred()) {
+                    result.markUpdateDeferred(publication.serverName());
+                }
+            }
+            result.ready.complete(null);
+        });
+    }
+
+    private synchronized void registerPendingEventListeners() {
         if (this.eventListenersRegistered) {
             return;
         }
@@ -238,7 +305,7 @@ public class ConfigurationManager {
         }
     }
 
-    private void applyPendingAction(String serverName) {
+    private synchronized void applyPendingAction(String serverName) {
         PendingAction action = this.pendingActions.remove(serverName);
         if (action == null) {
             return;
@@ -258,13 +325,13 @@ public class ConfigurationManager {
             serverInfoMap.remove(serverName);
             this.proxy.getLogger().info("Deferred removal applied: server '{}' removed (all players left)", serverName);
         } else {
-            // UPDATE action: put overwrites atomically
-            try {
-                serverInfoMap.put(serverName, serverInfoMap.fromServerEntry(action.getNewEntry()));
-                this.proxy.getLogger().info("Deferred update applied: server '{}' address updated (all players left)", serverName);
-            } catch (Exception e) {
-                this.proxy.getLogger().error("Failed to apply deferred update for server " + serverName, e);
-            }
+            // Publish the deferred update once its replacement is ready.
+            this.publishWhenReady(serverInfoMap, action.getNewEntry(), current).thenAccept(result -> {
+                if (!result.deferred()) {
+                    this.proxy.getLogger().info("Deferred update applied: server '{}' address updated (all players left)", serverName);
+                }
+            });
+            this.proxy.getLogger().info("Deferred update scheduled: server '{}' will update after address resolution", serverName);
         }
     }
 
@@ -414,13 +481,41 @@ public class ConfigurationManager {
         private final ServerEntry newEntry;
     }
 
+    private record PublicationResult(String serverName, boolean deferred) {
+    }
+
+    /**
+     * Outcome of a server-list reload. {@link #getUpdated()} and the pending lists are only final once
+     * {@link #getReady()} completes; read them from that future's completion callback.
+     */
     @Getter
-    @AllArgsConstructor
     public static class ReloadResult {
         private final int added;
         private final int removed;
-        private final int updated;
+        private int updated;
         private final List<String> pendingUpdates;
         private final List<String> pendingRemovals;
+        private final CompletableFuture<Void> ready;
+
+        public ReloadResult(int added, int removed, int updated, List<String> pendingUpdates, List<String> pendingRemovals) {
+            this(added, removed, updated, pendingUpdates, pendingRemovals, CompletableFuture.completedFuture(null));
+        }
+
+        private ReloadResult(int added, int removed, int updated, List<String> pendingUpdates,
+                             List<String> pendingRemovals, CompletableFuture<Void> ready) {
+            this.added = added;
+            this.removed = removed;
+            this.updated = updated;
+            this.pendingUpdates = pendingUpdates;
+            this.pendingRemovals = pendingRemovals;
+            this.ready = ready;
+        }
+
+        private void markUpdateDeferred(String serverName) {
+            this.updated--;
+            if (!this.pendingUpdates.contains(serverName)) {
+                this.pendingUpdates.add(serverName);
+            }
+        }
     }
 }

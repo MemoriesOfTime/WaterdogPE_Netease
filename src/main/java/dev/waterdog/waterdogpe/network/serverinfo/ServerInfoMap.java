@@ -22,6 +22,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 /**
@@ -53,6 +54,10 @@ public class ServerInfoMap {
         return this.serverList.put(name, info);
     }
 
+    public boolean replace(String name, ServerInfo expected, ServerInfo replacement) {
+        return this.serverList.replace(name, expected, replacement);
+    }
+
     public Collection<ServerInfo> values() {
         return Collections.unmodifiableCollection(this.serverList.values());
     }
@@ -75,5 +80,13 @@ public class ServerInfoMap {
 
     public ServerInfo fromServerEntry(ServerEntry entry) {
         return this.createServerInfo(entry.getServerName(), entry.getAddress(), entry.getPublicAddress(), entry.getServerInfoType());
+    }
+
+    /**
+     * Creates the server on the resolver thread, off the reload caller, since the constructor resolves
+     * the configured addresses synchronously. The returned instance is ready to publish.
+     */
+    public CompletableFuture<ServerInfo> fromServerEntryAsync(ServerEntry entry) {
+        return CompletableFuture.supplyAsync(() -> this.fromServerEntry(entry), ServerInfo.DNS_RESOLVER);
     }
 }

@@ -15,6 +15,7 @@
 
 package dev.waterdog.waterdogpe.utils.config.proxy;
 
+import dev.waterdog.waterdogpe.utils.config.ServerEntry;
 import net.cubespace.Yamler.Config.InvalidConfigurationException;
 import org.junit.jupiter.api.Test;
 
@@ -24,11 +25,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class ProxyConfigTest {
 
@@ -320,6 +317,25 @@ public class ProxyConfigTest {
         InvalidConfigurationException e = assertThrows(InvalidConfigurationException.class,
                 () -> new ProxyConfig(file).init());
         assertTrue(e.getMessage().contains("invalid config_version -1"), e.getMessage());
+    }
+
+    @Test
+    public void serverAddressesKeepTheirLiteralHostUnresolved() throws Exception {
+        File file = newFile();
+        Files.writeString(file.toPath(), """
+                servers:
+                  lobby:
+                    address: 127.0.0.1:19133
+                    public_address: play.example.com:19133
+                """);
+
+        ProxyConfig config = new ProxyConfig(file);
+        config.init();
+
+        ServerEntry lobby = config.getServerList().get("lobby");
+        assertEquals("play.example.com", lobby.getPublicAddress().getHostString());
+        assertEquals(19133, lobby.getPublicAddress().getPort());
+        assertTrue(lobby.getPublicAddress().isUnresolved());
     }
 
     @Test
